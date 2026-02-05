@@ -129,7 +129,7 @@
     };
 
     ws.onclose = () => {
-      setStatus('Disconnected', '#3b82f6');
+      setStatus('Disconnected', '#0000ff');
       setTimeout(connect, 1000);
     };
 
@@ -144,7 +144,7 @@
         if (data.error) {
           setStatus('Error', '#e63946');
         } else if (data.connected === false) {
-          setStatus('Disconnected', '#3b82f6');
+          setStatus('Disconnected', '#0000ff');
         } else if (data.firing) {
           setStatus('Firing', '#ff8a00');
         } else if (data.ready) {

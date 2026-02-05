@@ -121,9 +121,9 @@ static void update_status_led_locked(void) {
         runtime.status_b = 0; // firing orange (#ff8a00)
         break;
     case STATE_DISCONNECTED:
-        runtime.status_r = 59;
-        runtime.status_g = 130;
-        runtime.status_b = 246; // disconnected blue (#3b82f6)
+        runtime.status_r = 0;
+        runtime.status_g = 0;
+        runtime.status_b = 255; // disconnected blue (#0000ff)
         break;
     case STATE_ERROR:
     default:
