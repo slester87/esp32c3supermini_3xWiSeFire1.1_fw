@@ -23,6 +23,7 @@ Condensed steps:
 - Solenoid: https://www.amazon.com/dp/B00DQ1J4H0
 - Power supply (12V): https://www.amazon.com/dp/B0D9D5L3B5
 - Custom PCB with 3x WiSeFire 1.1 connections
+- Full Bill of Materials: `BOM.md`
 
 ## Wiring And LED Mapping
 
