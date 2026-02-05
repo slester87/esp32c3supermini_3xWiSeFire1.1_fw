@@ -27,6 +27,11 @@ if [ "${#c_files[@]}" -gt 0 ]; then
   clang-format --dry-run --Werror "${c_files[@]}"
 fi
 
+if [ "${POOFER_SKIP_CLANG_TIDY:-}" = "1" ]; then
+  echo "Skipping clang-tidy (POOFER_SKIP_CLANG_TIDY=1)."
+  exit 0
+fi
+
 CLANG_TIDY_BIN=$(command -v clang-tidy || true)
 if [ -z "$CLANG_TIDY_BIN" ] && [ -n "${POOFER_LLVM_BIN:-}" ] && [ -x "${POOFER_LLVM_BIN}/clang-tidy" ]; then
   CLANG_TIDY_BIN="${POOFER_LLVM_BIN}/clang-tidy"

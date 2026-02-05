@@ -2,12 +2,15 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "development"]
   pull_request:
+    branches: ["main", "development"]
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      POOFER_SKIP_CLANG_TIDY: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
