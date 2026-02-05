@@ -59,6 +59,9 @@ typedef struct {
     uint32_t last_hold_ms;
     int64_t last_ws_rx_us;
     uint8_t solenoid_level;
+    uint8_t status_r;
+    uint8_t status_g;
+    uint8_t status_b;
 } runtime_state_t;
 
 static led_strip_handle_t strip = NULL;
@@ -73,55 +76,55 @@ static runtime_state_t runtime = {
     .last_hold_ms = MIN_HOLD_MS,
     .last_ws_rx_us = 0,
     .solenoid_level = 0,
+    .status_r = 0,
+    .status_g = 0,
+    .status_b = 0,
 };
 static SemaphoreHandle_t state_lock;
 static esp_timer_handle_t max_hold_timer;
 static esp_timer_handle_t min_hold_timer;
 static esp_timer_handle_t solenoid_kick_timer;
 
-static void set_pixels(uint8_t status_r, uint8_t status_g, uint8_t status_b, uint8_t sol_r,
-                       uint8_t sol_g, uint8_t sol_b) {
+static void refresh_pixels_locked(void) {
     if (!strip) {
         return;
     }
-    led_strip_set_pixel(strip, STATUS_LED_INDEX, status_r, status_g, status_b);
-    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, sol_r, sol_g, sol_b);
-    led_strip_refresh(strip);
-}
-
-static void set_status_pixel(uint8_t status_r, uint8_t status_g, uint8_t status_b) {
-    if (!strip) {
-        return;
-    }
-    led_strip_set_pixel(strip, STATUS_LED_INDEX, status_r, status_g, status_b);
+    led_strip_set_pixel(strip, STATUS_LED_INDEX, runtime.status_r, runtime.status_g,
+                        runtime.status_b);
+    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, 0, runtime.solenoid_level, 0);
     led_strip_refresh(strip);
 }
 
 static void set_solenoid_level_locked(uint8_t level) {
     runtime.solenoid_level = level;
-    if (!strip) {
-        return;
-    }
-    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, 0, level, 0);
-    led_strip_refresh(strip);
+    refresh_pixels_locked();
 }
 
 static void update_status_led_locked(void) {
     switch (runtime.state) {
     case STATE_BOOT:
-        set_status_pixel(122, 138, 160); // idle/muted (#7a8aa0)
+        runtime.status_r = 122;
+        runtime.status_g = 138;
+        runtime.status_b = 160; // idle/muted (#7a8aa0)
         break;
     case STATE_READY:
-        set_status_pixel(29, 185, 84); // ready green (#1db954)
+        runtime.status_r = 29;
+        runtime.status_g = 185;
+        runtime.status_b = 84; // ready green (#1db954)
         break;
     case STATE_FIRING:
-        set_status_pixel(255, 138, 0); // firing orange (#ff8a00)
+        runtime.status_r = 255;
+        runtime.status_g = 138;
+        runtime.status_b = 0; // firing orange (#ff8a00)
         break;
     case STATE_ERROR:
     default:
-        set_status_pixel(230, 57, 70); // error red (#e63946)
+        runtime.status_r = 230;
+        runtime.status_g = 57;
+        runtime.status_b = 70; // error red (#e63946)
         break;
     }
+    refresh_pixels_locked();
 }
 
 static uint32_t clamp_hold_ms(uint32_t hold_ms) {
