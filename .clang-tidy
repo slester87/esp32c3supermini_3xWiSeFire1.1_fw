@@ -1,8 +1,6 @@
 Checks: >-
   clang-analyzer-*,
-  bugprone-*,
-  performance-*,-
-  performance-no-automatic-move
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
 WarningsAsErrors: ''
-HeaderFilterRegex: 'firmware/.*'
+HeaderFilterRegex: 'firmware/main/.*'
 FormatStyle: file

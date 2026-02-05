@@ -64,7 +64,7 @@
 <body>
   <div class="wrap">
     <h1>Poofer Control</h1>
-    <div class="sub">Press and hold to fire. 0.25s min, 5s max.</div>
+    <div class="sub">Press and hold to fire. 0.25s min, 3s max.</div>
 
     <div class="status">
       <div class="dot" id="statusDot"></div>
@@ -106,7 +106,7 @@
   let gauge = 1.0;
   let lastDeviceElapsed = 0;
 
-  const MAX_MS = 5000;
+  const MAX_MS = 3000;
 
   function setGauge(value) {
     gauge = Math.max(0, Math.min(1, value));
@@ -163,9 +163,15 @@
     const tick = (now) => {
       if (!isDown) return;
       const elapsed = now - start;
+      if (elapsed >= MAX_MS) {
+        setGauge(0);
+        heldMsEl.textContent = Math.round(MAX_MS);
+        startRefill(MAX_MS);
+        return;
+      }
       const next = startGauge - (elapsed / MAX_MS);
       setGauge(next);
-      heldMsEl.textContent = Math.round(Math.min(MAX_MS, elapsed));
+      heldMsEl.textContent = Math.round(elapsed);
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);

@@ -17,12 +17,19 @@ if ! command -v clang-format >/dev/null 2>&1; then
   exit 1
 fi
 
-mapfile -d '' c_files < <(git ls-files -z "firmware/**/*.c" "firmware/**/*.h")
+declare -a c_files=()
+while IFS= read -r -d '' file; do
+  c_files+=("$file")
+done < <(git ls-files -z "firmware/**/*.c" "firmware/**/*.h")
 if [ "${#c_files[@]}" -gt 0 ]; then
   clang-format --dry-run --Werror "${c_files[@]}"
 fi
 
-if ! command -v clang-tidy >/dev/null 2>&1; then
+CLANG_TIDY_BIN=$(command -v clang-tidy || true)
+if [ -z "$CLANG_TIDY_BIN" ] && [ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]; then
+  CLANG_TIDY_BIN=/opt/homebrew/opt/llvm/bin/clang-tidy
+fi
+if [ -z "$CLANG_TIDY_BIN" ]; then
   echo "clang-tidy is required." >&2
   exit 1
 fi
@@ -36,6 +43,8 @@ if [ ! -f firmware/build/compile_commands.json ]; then
   fi
 fi
 
+python3 scripts/prepare_clang_tidy_db.py
+
 for file in "${c_files[@]}"; do
-  clang-tidy -p firmware/build "$file"
+  "$CLANG_TIDY_BIN" -p firmware/build/clang_tidy "$file"
 done

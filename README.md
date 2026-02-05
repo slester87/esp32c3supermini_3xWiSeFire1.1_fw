@@ -76,7 +76,7 @@ Defaults are defined in `firmware/main/main.c`.
 
 - AP SSID and password
 - GPIO pin for the LED/solenoid chain
-- Minimum and maximum hold times
+- Minimum and maximum hold times (0.25s min, 3s max)
 - mDNS hostname and HTTP routes
 
 ## Development
