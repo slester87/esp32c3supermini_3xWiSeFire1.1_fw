@@ -109,17 +109,17 @@ static void set_solenoid_level_locked(uint8_t level) {
 static void update_status_led_locked(void) {
     switch (runtime.state) {
     case STATE_BOOT:
-        set_status_pixel(0, 0, 32); // dim blue
+        set_status_pixel(122, 138, 160); // idle/muted (#7a8aa0)
         break;
     case STATE_READY:
-        set_status_pixel(0, 64, 0); // green
+        set_status_pixel(29, 185, 84); // ready green (#1db954)
         break;
     case STATE_FIRING:
-        set_status_pixel(64, 16, 0); // orange
+        set_status_pixel(255, 138, 0); // firing orange (#ff8a00)
         break;
     case STATE_ERROR:
     default:
-        set_status_pixel(64, 0, 0); // red
+        set_status_pixel(230, 57, 70); // error red (#e63946)
         break;
     }
 }
