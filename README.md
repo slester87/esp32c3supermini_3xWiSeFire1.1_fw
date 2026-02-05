@@ -1,6 +1,6 @@
 # Poofer Firmware (ESP32-C3 Super Mini)
 
-![CI](https://github.com/slester87/esp32c3supermini_3xWiSeFire1.1_fw/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/slester87/esp32c3supermini_3xWiSeFire1.1_fw/actions/workflows/ci.yml/badge.svg?branch=main)
 
 Firmware and UI for a 3-channel WiSeFire 1.1-driven poofer controller built on an ESP32-C3 Super Mini.
 
