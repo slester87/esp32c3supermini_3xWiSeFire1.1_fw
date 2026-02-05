@@ -49,7 +49,8 @@
       flex: 1; display: flex; flex-direction: column; gap: 12px;
     }
     .btn {
-      user-select: none; touch-action: none; cursor: pointer;
+      user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer;
       background: var(--btn-up); border: 1px solid #2c3b52; border-radius: 14px; padding: 26px 18px;
       text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 1px;
       box-shadow: inset 0 0 18px rgba(0,0,0,0.4);
@@ -128,7 +129,7 @@
     };
 
     ws.onclose = () => {
-      setStatus('Disconnected', '#e63946');
+      setStatus('Disconnected', '#3b82f6');
       setTimeout(connect, 1000);
     };
 
@@ -142,6 +143,8 @@
 
         if (data.error) {
           setStatus('Error', '#e63946');
+        } else if (data.connected === false) {
+          setStatus('Disconnected', '#3b82f6');
         } else if (data.firing) {
           setStatus('Firing', '#ff8a00');
         } else if (data.ready) {
@@ -221,9 +224,12 @@
     startRefill(clamped);
   }
 
+  fireBtn.addEventListener('contextmenu', (e) => e.preventDefault());
   fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); handleDown(); });
   document.addEventListener('pointerup', (e) => { if (isDown) handleUp(); });
   document.addEventListener('pointercancel', handleUp);
+  fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(); }, { passive: false });
+  fireBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleUp(); }, { passive: false });
 
   setGauge(1.0);
   connect();

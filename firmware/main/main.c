@@ -47,6 +47,7 @@ typedef enum {
     STATE_BOOT = 0,
     STATE_READY,
     STATE_FIRING,
+    STATE_DISCONNECTED,
     STATE_ERROR,
 } system_state_t;
 
@@ -58,6 +59,7 @@ typedef struct {
     int64_t press_start_us;
     uint32_t last_hold_ms;
     int64_t last_ws_rx_us;
+    bool ws_connected;
     uint8_t solenoid_level;
     uint8_t status_r;
     uint8_t status_g;
@@ -75,6 +77,7 @@ static runtime_state_t runtime = {
     .press_start_us = 0,
     .last_hold_ms = MIN_HOLD_MS,
     .last_ws_rx_us = 0,
+    .ws_connected = false,
     .solenoid_level = 0,
     .status_r = 0,
     .status_g = 0,
@@ -117,6 +120,11 @@ static void update_status_led_locked(void) {
         runtime.status_g = 138;
         runtime.status_b = 0; // firing orange (#ff8a00)
         break;
+    case STATE_DISCONNECTED:
+        runtime.status_r = 59;
+        runtime.status_g = 130;
+        runtime.status_b = 246; // disconnected blue (#3b82f6)
+        break;
     case STATE_ERROR:
     default:
         runtime.status_r = 230;
@@ -158,6 +166,7 @@ static void send_state_async(void) {
     bool ready = false;
     bool firing = false;
     bool error = false;
+    bool connected = false;
     uint32_t elapsed = 0;
     uint32_t last_hold = 0;
 
@@ -165,16 +174,18 @@ static void send_state_async(void) {
         ready = (runtime.state == STATE_READY || runtime.state == STATE_FIRING);
         firing = (runtime.state == STATE_FIRING);
         error = (runtime.state == STATE_ERROR);
+        connected = runtime.ws_connected;
         elapsed = current_elapsed_ms_locked();
         last_hold = runtime.last_hold_ms;
         xSemaphoreGive(state_lock);
     }
 
     int len = snprintf(payload, sizeof(payload),
-                       "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"elapsed_ms\":%" PRIu32
-                       ",\"last_hold_ms\":%" PRIu32 "}",
+                       "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,"
+                       "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
                        ready ? "true" : "false", firing ? "true" : "false",
-                       error ? "true" : "false", elapsed, last_hold);
+                       error ? "true" : "false", connected ? "true" : "false",
+                       elapsed, last_hold);
     if (len <= 0 || len >= (int)sizeof(payload)) {
         return;
     }
@@ -323,6 +334,11 @@ static void handle_ws_message(const char* msg) {
     int64_t now = esp_timer_get_time();
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
         runtime.last_ws_rx_us = now;
+        runtime.ws_connected = true;
+        if (runtime.state == STATE_DISCONNECTED) {
+            runtime.state = STATE_READY;
+            update_status_led_locked();
+        }
         xSemaphoreGive(state_lock);
     }
 
@@ -338,6 +354,15 @@ static void handle_ws_message(const char* msg) {
 static esp_err_t ws_handler(httpd_req_t* req) {
     if (req->method == HTTP_GET) {
         ws_client_fd = httpd_req_to_sockfd(req);
+        if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+            runtime.ws_connected = true;
+            runtime.last_ws_rx_us = esp_timer_get_time();
+            if (runtime.state == STATE_DISCONNECTED) {
+                runtime.state = STATE_READY;
+                update_status_led_locked();
+            }
+            xSemaphoreGive(state_lock);
+        }
         send_state_async();
         return ESP_OK;
     }
@@ -561,7 +586,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         start_mdns();
         if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
             if (runtime.state == STATE_BOOT) {
-                runtime.state = STATE_READY;
+                runtime.state = STATE_DISCONNECTED;
                 update_status_led_locked();
             }
             xSemaphoreGive(state_lock);
@@ -676,9 +701,19 @@ static void status_task(void* arg) {
 
             if (runtime.press_active && runtime.last_ws_rx_us != 0) {
                 if ((now - runtime.last_ws_rx_us) > 2000000) {
-                    stop_firing_locked(STATE_READY);
+                    stop_firing_locked(STATE_DISCONNECTED);
+                    runtime.ws_connected = false;
                     should_stop = true;
                 }
+            }
+            if (runtime.ws_connected && runtime.last_ws_rx_us != 0 &&
+                (now - runtime.last_ws_rx_us) > 2000000) {
+                runtime.ws_connected = false;
+                if (runtime.state != STATE_ERROR && runtime.state != STATE_FIRING) {
+                    runtime.state = STATE_DISCONNECTED;
+                    update_status_led_locked();
+                }
+                should_send = true;
             }
             xSemaphoreGive(state_lock);
         }
@@ -741,7 +776,7 @@ void app_main(void) {
     wifi_init_ap_sta();
 
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
-        runtime.state = STATE_READY;
+        runtime.state = STATE_DISCONNECTED;
         update_status_led_locked();
         xSemaphoreGive(state_lock);
     }

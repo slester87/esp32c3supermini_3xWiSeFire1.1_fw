@@ -76,6 +76,7 @@ State messages from device to client:
   "ready": true,
   "firing": false,
   "error": false,
+  "connected": true,
   "elapsed_ms": 0,
   "last_hold_ms": 250
 }
@@ -89,6 +90,7 @@ Defaults are defined in `firmware/main/main.c`.
 - GPIO pin for the LED/solenoid chain
 - Minimum and maximum hold times (0.25s min, 3s max)
 - mDNS hostname and HTTP routes
+- Status LED colors: green = ready, orange = firing, blue = disconnected, red = fault
 
 ## Development
 
