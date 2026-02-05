@@ -109,6 +109,12 @@ The workflow uploads these files as artifacts:
 - `spiffs.bin`
 - `flasher_args.json` and `*_flash_args` helpers
 
+Create a release tag:
+
+```bash
+scripts/release_tag.sh 1.0.0
+```
+
 ## Config
 
 Optional local config is supported via `.env`.
