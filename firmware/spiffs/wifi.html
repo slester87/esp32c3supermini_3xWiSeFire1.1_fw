@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wi-Fi Setup</title>
+  <style>
+    body { font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif; background: #0b0f14; color: #f0f4f8; padding: 24px; }
+    form { max-width: 420px; margin: 0 auto; background: #111823; padding: 20px; border-radius: 12px; border: 1px solid #1f2a3a; }
+    label { display: block; margin-bottom: 6px; font-size: 14px; }
+    input { width: 100%; padding: 10px; margin-bottom: 14px; border-radius: 8px; border: 1px solid #2c3b52; background: #0f151f; color: #fff; }
+    button { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #1db954; color: #0b0f14; font-weight: 700; cursor: pointer; }
+    .hint { color: #7a8aa0; font-size: 12px; margin-top: 12px; text-align: center; }
+    a { color: #7fb7ff; }
+  </style>
+</head>
+<body>
+  <form method="POST" action="/wifi">
+    <h2>Join Wi-Fi</h2>
+    <label for="ssid">SSID</label>
+    <input id="ssid" name="ssid" placeholder="Network name" required />
+    <label for="pass">Password</label>
+    <input id="pass" name="pass" placeholder="Password" type="password" />
+    <button type="submit">Save & Connect</button>
+    <div class="hint">After saving, go back to <a href="/">control page</a>.</div>
+  </form>
+</body>
+</html>

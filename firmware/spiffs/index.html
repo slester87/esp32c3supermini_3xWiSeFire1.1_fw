@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Poofer Control</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #111823;
+      --accent: #ff8a00;
+      --ready: #1db954;
+      --error: #e63946;
+      --text: #f0f4f8;
+      --muted: #7a8aa0;
+      --gauge-bg: #1c2533;
+      --gauge-fill: #3fb950;
+      --btn-up: #202a38;
+      --btn-down: #2e3b4d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0; background: radial-gradient(circle at 20% 20%, #172133, #0b0f14 55%);
+      color: var(--text); font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif; display: flex; justify-content: center;
+      min-height: 100vh; align-items: center;
+    }
+    .wrap {
+      width: min(540px, 92vw);
+      background: linear-gradient(160deg, #141d2a, #0f151f);
+      border: 1px solid #1f2a3a; border-radius: 16px; padding: 20px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    }
+    h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: 0.5px; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+    .status {
+      display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 16px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+    .row { display: flex; gap: 16px; align-items: stretch; }
+    .gauge {
+      width: 64px; background: var(--gauge-bg); border-radius: 10px; padding: 6px; display: flex; align-items: flex-end;
+      border: 1px solid #243246;
+    }
+    .gauge-fill {
+      width: 100%; border-radius: 6px; height: 100%; background: linear-gradient(180deg, #59d185, var(--gauge-fill));
+      transition: height 0.08s linear;
+    }
+    .control {
+      flex: 1; display: flex; flex-direction: column; gap: 12px;
+    }
+    .btn {
+      user-select: none; touch-action: none; cursor: pointer;
+      background: var(--btn-up); border: 1px solid #2c3b52; border-radius: 14px; padding: 26px 18px;
+      text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 1px;
+      box-shadow: inset 0 0 18px rgba(0,0,0,0.4);
+    }
+    .btn.active { background: var(--btn-down); color: #fff; box-shadow: inset 0 0 24px rgba(0,0,0,0.6); }
+    .meta { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+    .meta span { font-variant-numeric: tabular-nums; }
+    .footer { margin-top: 12px; font-size: 12px; color: var(--muted); }
+    a { color: #7fb7ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Poofer Control</h1>
+    <div class="sub">Press and hold to fire. 0.25s min, 5s max.</div>
+
+    <div class="status">
+      <div class="dot" id="statusDot"></div>
+      <div id="statusText">Connecting...</div>
+    </div>
+
+    <div class="row">
+      <div class="gauge">
+        <div class="gauge-fill" id="gaugeFill"></div>
+      </div>
+      <div class="control">
+        <div class="btn" id="fireBtn">FIRE</div>
+        <div class="meta">
+          <span>Held: <span id="heldMs">0</span> ms</span>
+          <span>Last: <span id="lastMs">250</span> ms</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Wi-Fi setup: <a href="/wifi">/wifi</a> | If the UI feels stuck, release and reconnect.
+    </div>
+  </div>
+
+<script>
+(() => {
+  const fireBtn = document.getElementById('fireBtn');
+  const gaugeFill = document.getElementById('gaugeFill');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const heldMsEl = document.getElementById('heldMs');
+  const lastMsEl = document.getElementById('lastMs');
+
+  let ws;
+  let isDown = false;
+  let pressStart = 0;
+  let lastHoldMs = 250;
+  let rafId = null;
+  let gauge = 1.0;
+  let lastDeviceElapsed = 0;
+
+  const MAX_MS = 5000;
+
+  function setGauge(value) {
+    gauge = Math.max(0, Math.min(1, value));
+    gaugeFill.style.height = Math.round(gauge * 100) + '%';
+  }
+
+  function setStatus(text, color) {
+    statusText.textContent = text;
+    statusDot.style.background = color;
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+    ws.onopen = () => {
+      setStatus('Ready', '#1db954');
+      ws.send('PING');
+    };
+
+    ws.onclose = () => {
+      setStatus('Disconnected', '#e63946');
+      setTimeout(connect, 1000);
+    };
+
+    ws.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        lastHoldMs = data.last_hold_ms || lastHoldMs;
+        lastMsEl.textContent = lastHoldMs;
+        lastDeviceElapsed = data.elapsed_ms || 0;
+        heldMsEl.textContent = lastDeviceElapsed;
+
+        if (data.error) {
+          setStatus('Error', '#e63946');
+        } else if (data.firing) {
+          setStatus('Firing', '#ff8a00');
+        } else if (data.ready) {
+          setStatus('Ready', '#1db954');
+        } else {
+          setStatus('Idle', '#7a8aa0');
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+  }
+
+  function startDrain() {
+    cancelAnimationFrame(rafId);
+    const start = performance.now();
+    const startGauge = gauge;
+
+    const tick = (now) => {
+      if (!isDown) return;
+      const elapsed = now - start;
+      const next = startGauge - (elapsed / MAX_MS);
+      setGauge(next);
+      heldMsEl.textContent = Math.round(Math.min(MAX_MS, elapsed));
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function startRefill(duration) {
+    cancelAnimationFrame(rafId);
+    const start = performance.now();
+    const from = gauge;
+    const dur = Math.max(10, duration);
+    const tick = (now) => {
+      const elapsed = now - start;
+      const t = Math.min(1, elapsed / dur);
+      setGauge(from + (1 - from) * t);
+      if (t < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function send(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  }
+
+  function handleDown() {
+    if (isDown) return;
+    isDown = true;
+    pressStart = performance.now();
+    fireBtn.classList.add('active');
+    send('DOWN');
+    startDrain();
+  }
+
+  function handleUp() {
+    if (!isDown) return;
+    isDown = false;
+    fireBtn.classList.remove('active');
+    send('UP');
+
+    const held = performance.now() - pressStart;
+    const clamped = Math.min(MAX_MS, Math.max(250, held));
+    lastHoldMs = clamped;
+    lastMsEl.textContent = Math.round(clamped);
+    startRefill(clamped);
+  }
+
+  fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); handleDown(); });
+  document.addEventListener('pointerup', (e) => { if (isDown) handleUp(); });
+  document.addEventListener('pointercancel', handleUp);
+
+  setGauge(1.0);
+  connect();
+  setInterval(() => send('PING'), 1000);
+})();
+</script>
+</body>
+</html>
