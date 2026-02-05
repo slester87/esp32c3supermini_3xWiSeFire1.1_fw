@@ -1,0 +1,8 @@
+Checks: >-
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,-
+  performance-no-automatic-move
+WarningsAsErrors: ''
+HeaderFilterRegex: 'firmware/.*'
+FormatStyle: file
