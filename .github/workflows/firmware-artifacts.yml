@@ -1,0 +1,62 @@
+name: Firmware Artifacts
+
+on:
+  push:
+    tags:
+      - "fw-*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ESP-IDF
+        run: |
+          git clone --depth 1 --branch v5.5.2 https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
+          "$HOME/esp-idf/install.sh"
+
+      - name: Build firmware
+        run: |
+          source "$HOME/esp-idf/export.sh"
+          idf.py build
+        working-directory: firmware
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR=artifacts
+          mkdir -p "$ARTIFACT_DIR"
+          cp firmware/build/bootloader/bootloader.bin "$ARTIFACT_DIR/"
+          cp firmware/build/partition_table/partition-table.bin "$ARTIFACT_DIR/"
+          cp firmware/build/poofer.bin "$ARTIFACT_DIR/"
+          cp firmware/build/spiffs.bin "$ARTIFACT_DIR/"
+          cp firmware/build/flasher_args.json "$ARTIFACT_DIR/"
+          cp firmware/build/flash_args "$ARTIFACT_DIR/"
+          cp firmware/build/flash_project_args "$ARTIFACT_DIR/"
+          cp firmware/build/flash_app_args "$ARTIFACT_DIR/"
+          cp firmware/build/flash_bootloader_args "$ARTIFACT_DIR/"
+          cp firmware/build/partition-table-flash_args "$ARTIFACT_DIR/"
+          cp firmware/build/spiffs-flash_args "$ARTIFACT_DIR/"
+          cat > "$ARTIFACT_DIR/README.txt" << 'EOF'
+          Flashing (example):
+            esptool.py --chip esp32c3 -p /dev/ttyUSB0 -b 460800 \
+              --before=default_reset --after=hard_reset write_flash \
+              --flash_mode dio --flash_freq 80m --flash_size 4MB \
+              0x0 bootloader.bin 0x10000 poofer.bin 0x8000 partition-table.bin 0x110000 spiffs.bin
+
+          Offsets can be found in flasher_args.json and *_flash_args files.
+          EOF
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.ref_name }}
+          path: artifacts

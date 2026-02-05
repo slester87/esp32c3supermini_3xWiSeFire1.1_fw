@@ -97,6 +97,18 @@ Defaults are defined in `firmware/main/main.c`.
 - Linting entry point: `scripts/lint.sh`
 - Git hooks: `pre-commit install`
 
+## Releases
+
+Firmware artifacts are built in CI for tags matching `fw-*`.
+
+The workflow uploads these files as artifacts:
+
+- `bootloader.bin`
+- `partition-table.bin`
+- `poofer.bin`
+- `spiffs.bin`
+- `flasher_args.json` and `*_flash_args` helpers
+
 ## Config
 
 Optional local config is supported via `.env`.
