@@ -91,7 +91,7 @@ Notes:
 
 ## Wi-Fi And UI
 
-- AP SSID: `Poofer-built-by-Skip`
+- AP SSID: `Poofer-AP`
 - AP password: `FlameoHotMan`
 - Wi-Fi setup page: `http://192.168.4.1/wifi`
 - Control UI: `http://192.168.4.1/`

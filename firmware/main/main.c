@@ -26,7 +26,7 @@
 #include "driver/gpio.h"
 #include "led_strip.h"
 
-#define AP_SSID "Poofer-built-by-Skip"
+#define AP_SSID "Poofer-AP"
 #define AP_PASS "FlameoHotMan"
 #define AP_MAX_CONN 4
 

@@ -15,7 +15,7 @@ Condensed steps:
 - Build: `python3 scripts/build.py`
 - Flash: `python3 scripts/flash.py --port /dev/cu.usbmodemXXXX`
 - Monitor: `python3 scripts/monitor.py --port /dev/cu.usbmodemXXXX`
-- Connect to AP `Poofer-built-by-Skip` and open `http://192.168.4.1/`
+- Connect to AP `Poofer-AP` and open `http://192.168.4.1/`
 
 ## Hardware
 
