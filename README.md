@@ -51,6 +51,16 @@ This mapping is intentional and should be preserved. The firmware treats the cha
 - Wi-Fi setup: `http://192.168.4.1/wifi`
 - mDNS after STA join: `http://poofer.local/`
 
+### UI Screenshots
+
+Ready state:
+
+![Poofer Control UI ready state](EC702A98-FD31-49A0-B811-E277FAC205C0_4_5005_c.jpeg)
+
+Firing state:
+
+![Poofer Control UI firing state](11089010-D734-4728-B3B4-9B94340ECF5F_4_5005_c.jpeg)
+
 ## WebSocket Protocol
 
 Messages from client to device:
