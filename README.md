@@ -85,6 +85,13 @@ Defaults are defined in `firmware/main/main.c`.
 - Linting entry point: `scripts/lint.sh`
 - Git hooks: `pre-commit install`
 
+## Config
+
+Optional local config is supported via `.env`.
+
+- Copy `.env.example` to `.env`
+- Set `POOFER_IDF_PATH`, `POOFER_SERIAL_PORT`, and any optional overrides
+
 ## Safety
 
 TODO: Add explicit safety guidelines and operational constraints.
