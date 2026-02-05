@@ -11,6 +11,7 @@ For a full setup guide, see `INSTALL.md`.
 Condensed steps:
 
 - Install ESP-IDF 5.5.x and ensure `idf.py` is on your PATH.
+- Optional: copy `.env.example` to `.env` to set defaults like `POOFER_SERIAL_PORT`.
 - Build: `python3 scripts/build.py`
 - Flash: `python3 scripts/flash.py --port /dev/cu.usbmodemXXXX`
 - Monitor: `python3 scripts/monitor.py --port /dev/cu.usbmodemXXXX`

@@ -1,0 +1,18 @@
+# Local env
+.env
+
+# ESP-IDF build artifacts
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+
+# IDF component manager lock (generated)
+firmware/dependencies.lock
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

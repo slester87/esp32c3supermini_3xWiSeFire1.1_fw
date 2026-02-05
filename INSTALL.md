@@ -27,6 +27,20 @@ Make sure `idf.py` is available on your PATH. You should be able to run:
 idf.py --version
 ```
 
+Set your ESP-IDF path once per shell:
+
+```bash
+export ESP_IDF_PATH=/path/to/esp-idf
+```
+
+If `idf.py` is not on your PATH in a new shell session, source the ESP-IDF environment:
+
+```bash
+source "$ESP_IDF_PATH/export.sh"
+```
+
+You can also set local defaults by copying `.env.example` to `.env` and editing it.
+
 ## Project Setup
 
 ```bash
