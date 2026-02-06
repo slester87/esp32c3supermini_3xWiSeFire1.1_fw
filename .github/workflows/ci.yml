@@ -41,5 +41,10 @@ jobs:
           idf.py build
         working-directory: firmware
 
+      - name: Verify UI assets and routes
+        run: |
+          scripts/verify_routes.py
+          scripts/verify_spiffs.py
+
       - name: Run lint
         run: scripts/lint.sh
