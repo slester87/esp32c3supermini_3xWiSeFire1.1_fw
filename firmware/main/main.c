@@ -180,16 +180,11 @@ static void send_state_async(void) {
         xSemaphoreGive(state_lock);
     }
 
-    int len = snprintf(
-        payload, sizeof(payload),
-        "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,"
-        "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
-        ready ? "true" : "false",
-        firing ? "true" : "false",
-        error ? "true" : "false",
-        connected ? "true" : "false",
-        elapsed,
-        last_hold);
+    int len = snprintf(payload, sizeof(payload),
+                       "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,"
+                       "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
+                       ready ? "true" : "false", firing ? "true" : "false",
+                       error ? "true" : "false", connected ? "true" : "false", elapsed, last_hold);
     if (len <= 0 || len >= (int)sizeof(payload)) {
         return;
     }
