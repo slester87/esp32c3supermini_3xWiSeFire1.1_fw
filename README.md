@@ -32,10 +32,6 @@ GPIO4 drives a 3-pixel WS2812 chain.
 - Pixel 0 is a physical on-board LED soldered to the ESP32 board.
 - Pixel 1 is a virtual pixel used for solenoid control via the custom PCB.
 - Pixel 2 is a virtual pixel used as a firing indicator.
-- Pixel 1 red channel -> solenoid 1
-- Pixel 1 green channel -> solenoid 2
-- Pixel 1 blue channel -> solenoid 3
-
 This mapping is intentional and should be preserved. The firmware treats the chain as three pixels.
 Currently, the firmware drives Pixel 1 and Pixel 2 as white (`R=G=B`). On the WiSeFire board, Pixel 1 white
 fires solenoids 1 and 2, and Pixel 2 white fires solenoid 3.
