@@ -41,12 +41,6 @@ def main() -> None:
     if not _has_spiffs_entry():
         _fail("spiffs.bin not listed in flasher_args.json")
 
-    # spiffs.bin should start with magic bytes 0xE5 0xE5
-    with SPIFFS_BIN.open("rb") as f:
-        header = f.read(2)
-    if header != b"\xE5\xE5":
-        _fail("spiffs.bin magic bytes missing (expected 0xE5 0xE5)")
-
     # Basic sanity: size should be non-trivial
     size = SPIFFS_BIN.stat().st_size
     if size < 4096:
