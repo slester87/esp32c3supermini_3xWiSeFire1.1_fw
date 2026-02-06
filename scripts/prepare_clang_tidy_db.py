@@ -13,6 +13,7 @@ DROP_FLAGS = {
     "-fno-tree-switch-conversion",
     "-fstrict-volatile-bitfields",
     "-nostartfiles",
+    "-mlongcalls",
     'PROJECT_NAME="poofer"',
 }
 
@@ -30,6 +31,11 @@ def _filter_args(entry):
     for arg in args:
         if arg in DROP_FLAGS:
             continue
+        if arg.startswith("--target=xtensa"):
+            continue
+        # Replace Xtensa cross-compiler with clang for clang-tidy
+        if "xtensa" in arg and arg == args[0]:
+            arg = "clang"
         if '\\"' in arg:
             arg = arg.replace('\\"', '"')
         filtered.append(arg)

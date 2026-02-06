@@ -2,121 +2,256 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Poofer Control</title>
   <style>
     :root {
       --bg: #0b0f14;
-      --panel: #111823;
-      --accent: #ff8a00;
-      --ready: #1db954;
-      --error: #e63946;
       --text: #f0f4f8;
       --muted: #7a8aa0;
       --gauge-bg: #1c2533;
-      --gauge-fill: #3fb950;
-      --btn-up: #202a38;
-      --btn-down: #2e3b4d;
+      --ch1: #c84040;
+      --ch2: #30b850;
+      --ch3: #4878d0;
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; }
     body {
-      margin: 0; padding: 0; background: radial-gradient(circle at 20% 20%, #172133, #0b0f14 55%);
-      color: var(--text); font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif; display: flex; justify-content: center;
-      min-height: 100vh; align-items: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
     }
     .wrap {
-      width: min(540px, 92vw);
-      background: linear-gradient(160deg, #141d2a, #0f151f);
-      border: 1px solid #1f2a3a; border-radius: 16px; padding: 20px;
-      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+      width: 100%; max-width: 420px; margin: 0 auto;
+      padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top));
     }
-    h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: 0.5px; }
-    .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
-    .status {
-      display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 16px;
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
     }
-    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
-    .row { display: flex; gap: 16px; align-items: stretch; }
-    .gauge {
-      width: 64px; background: var(--gauge-bg); border-radius: 10px; padding: 6px; display: flex; align-items: flex-end;
-      border: 1px solid #243246;
+    h1 { font-size: 18px; letter-spacing: 0.3px; }
+    .status { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .gauges {
+      display: flex; flex-direction: column; gap: 1px;
+      border-radius: 4px; overflow: hidden;
+      background: #1a2535; border: 1px solid #1e2d40;
+      margin-bottom: 10px;
     }
-    .gauge-fill {
-      width: 100%; border-radius: 6px; height: 100%; background: linear-gradient(180deg, #59d185, var(--gauge-fill));
-      transition: height 0.08s linear;
+    .gauge-bar { height: 6px; background: var(--gauge-bg); }
+    .gauge-bar-fill {
+      height: 100%; width: 100%; border-radius: 0;
+      transition: width 0.04s linear;
     }
-    .control {
-      flex: 1; display: flex; flex-direction: column; gap: 12px;
-    }
-    .btn {
+    #gaugeFill0 { background: var(--ch1); }
+    #gaugeFill1 { background: var(--ch2); }
+    #gaugeFill2 { background: var(--ch3); }
+    .venn-wrap { position: relative; }
+    .venn {
       user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer;
-      background: var(--btn-up); border: 1px solid #2c3b52; border-radius: 14px; padding: 26px 18px;
-      text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 1px;
-      box-shadow: inset 0 0 18px rgba(0,0,0,0.4);
+      -webkit-tap-highlight-color: transparent; touch-action: none; cursor: pointer;
+      width: 100%; display: block;
     }
-    .btn.active { background: var(--btn-down); color: #fff; box-shadow: inset 0 0 24px rgba(0,0,0,0.6); }
-    .meta { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+    .venn circle.zone { stroke-width: 2; transition: fill 0.12s, stroke 0.12s, opacity 0.15s; }
+    #zone0       { fill: rgba(200,55,55,0.24); stroke: #5c2020; }
+    #zone0.active { fill: rgba(200,55,55,0.55); stroke: #e05555; }
+    #zone1       { fill: rgba(40,180,70,0.24); stroke: #1a5c2a; }
+    #zone1.active { fill: rgba(40,180,70,0.55); stroke: #45d870; }
+    #zone2       { fill: rgba(60,100,220,0.24); stroke: #253878; }
+    #zone2.active { fill: rgba(60,100,220,0.55); stroke: #6090e8; }
+    .venn-label {
+      font-size: 16px; font-weight: 700; pointer-events: none;
+      font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
+    }
+    #label0 { fill: #cc6060; }
+    #label1 { fill: #50bb60; }
+    #label2 { fill: #6898d8; }
+    .venn.cooldown circle.zone { opacity: 0.2; transition: opacity 0.1s; }
+    .cooldown-text {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--muted); font-size: 15px; font-weight: 600; pointer-events: none;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .cooldown-text.visible { opacity: 1; }
+    @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+    .cooldown-text.visible { animation: pulse 0.4s ease-in-out infinite; }
+    .meta {
+      font-size: 11px; color: var(--muted); display: flex; justify-content: space-between;
+      padding-top: 6px;
+    }
     .meta span { font-variant-numeric: tabular-nums; }
-    .footer { margin-top: 12px; font-size: 12px; color: var(--muted); }
+    .footer { margin-top: 8px; font-size: 11px; color: var(--muted); }
     a { color: #7fb7ff; text-decoration: none; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Poofer Control</h1>
-    <div class="sub">Press and hold to fire. 0.25s min, 3s max.</div>
-
-    <div class="status">
-      <div class="dot" id="statusDot"></div>
-      <div id="statusText">Connecting...</div>
+    <div class="header">
+      <h1>Poofer Control</h1>
+      <div class="status">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">Connecting...</span>
+      </div>
     </div>
 
-    <div class="row">
-      <div class="gauge">
-        <div class="gauge-fill" id="gaugeFill"></div>
-      </div>
-      <div class="control">
-        <div class="btn" id="fireBtn">FIRE</div>
-        <div class="meta">
-          <span>Held: <span id="heldMs">0</span> ms</span>
-          <span>Last: <span id="lastMs">250</span> ms</span>
-        </div>
-      </div>
+    <div class="gauges">
+      <div class="gauge-bar"><div class="gauge-bar-fill" id="gaugeFill0"></div></div>
+      <div class="gauge-bar"><div class="gauge-bar-fill" id="gaugeFill1"></div></div>
+      <div class="gauge-bar"><div class="gauge-bar-fill" id="gaugeFill2"></div></div>
+    </div>
+
+    <div class="venn-wrap">
+      <svg class="venn" id="vennSvg" viewBox="0 0 300 270">
+        <circle class="zone" id="zone0" cx="150" cy="106" r="80" />
+        <circle class="zone" id="zone1" cx="109" cy="177" r="80" />
+        <circle class="zone" id="zone2" cx="191" cy="177" r="80" />
+        <text class="venn-label" id="label0" x="150" y="20" text-anchor="middle">1</text>
+        <text class="venn-label" id="label1" x="25" y="212" text-anchor="middle">2</text>
+        <text class="venn-label" id="label2" x="275" y="212" text-anchor="middle">3</text>
+      </svg>
+      <div class="cooldown-text" id="cooldownText"></div>
+    </div>
+
+    <div class="meta">
+      <span>Held: <span id="heldMs">0</span> ms</span>
+      <span>Last: <span id="lastMs">250</span> ms</span>
     </div>
 
     <div class="footer">
-      Wi-Fi setup: <a href="/wifi">/wifi</a> | If the UI feels stuck, release and reconnect.
+      Wi-Fi: <a href="/wifi">/wifi</a>
     </div>
   </div>
 
 <script>
 (() => {
-  const fireBtn = document.getElementById('fireBtn');
-  const gaugeFill = document.getElementById('gaugeFill');
+  // --- DOM references and geometry constants ---
+  const vennSvg = document.getElementById('vennSvg');
+  const zones = [
+    document.getElementById('zone0'),
+    document.getElementById('zone1'),
+    document.getElementById('zone2')
+  ];
+  const gaugeFills = [
+    document.getElementById('gaugeFill0'),
+    document.getElementById('gaugeFill1'),
+    document.getElementById('gaugeFill2')
+  ];
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
   const heldMsEl = document.getElementById('heldMs');
   const lastMsEl = document.getElementById('lastMs');
+  const cooldownText = document.getElementById('cooldownText');
+
+  const centers = [
+    { x: 150, y: 106 },
+    { x: 109, y: 177 },
+    { x: 191, y: 177 }
+  ];
+  const R = 80;
 
   let ws;
   let isDown = false;
+  let activeMask = 0;
   let pressStart = 0;
   let lastHoldMs = 250;
-  let rafId = null;
-  let gauge = 1.0;
-  let lastDeviceElapsed = 0;
+  let cooldownUntil = 0;
+  let cooldownRafId = null;
+  let serverFiring = [false, false, false];
 
   const MAX_MS = 3000;
+  const REFILL_MS = 100;
+  const MIN_HOLD_MS = 250;
 
-  function setGauge(value) {
-    gauge = Math.max(0, Math.min(1, value));
-    gaugeFill.style.height = Math.round(gauge * 100) + '%';
+  const gauges = [1, 1, 1];
+  const gaugeAnims = [null, null, null];
+  let gaugeRafId = null;
+
+  // --- Venn diagram coordinate geometry ---
+  function clientToSvg(clientX, clientY) {
+    const rect = vennSvg.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * 300,
+      y: ((clientY - rect.top) / rect.height) * 270
+    };
   }
 
+  function getChannelMask(clientX, clientY) {
+    const pt = clientToSvg(clientX, clientY);
+    let mask = 0;
+    for (let i = 0; i < 3; i++) {
+      const dx = pt.x - centers[i].x;
+      const dy = pt.y - centers[i].y;
+      if (dx * dx + dy * dy <= R * R) mask |= (1 << i);
+    }
+    return mask;
+  }
+
+  // --- Gauge drain/refill animation ---
+  function setGauge(ch, value) {
+    gauges[ch] = Math.max(0, Math.min(1, value));
+    gaugeFills[ch].style.width = Math.round(gauges[ch] * 100) + '%';
+  }
+
+  function tickGauges(now) {
+    let anyActive = false;
+    let maxDrainElapsed = 0;
+    for (let i = 0; i < 3; i++) {
+      const a = gaugeAnims[i];
+      if (!a) continue;
+      anyActive = true;
+      const elapsed = now - a.start;
+      if (a.type === 'drain') {
+        const frac = Math.min(1, elapsed / MAX_MS);
+        setGauge(i, a.from * (1 - frac));
+        maxDrainElapsed = Math.max(maxDrainElapsed, elapsed);
+        if (frac >= 1) {
+          gaugeAnims[i] = { type: 'refill', start: now, from: 0 };
+        }
+      } else {
+        const t = Math.min(1, elapsed / REFILL_MS);
+        setGauge(i, a.from + (1 - a.from) * t);
+        if (t >= 1) { setGauge(i, 1); gaugeAnims[i] = null; }
+      }
+    }
+    if (maxDrainElapsed > 0) {
+      heldMsEl.textContent = Math.round(Math.min(maxDrainElapsed, MAX_MS));
+    }
+    if (anyActive) {
+      gaugeRafId = requestAnimationFrame(tickGauges);
+    } else {
+      gaugeRafId = null;
+    }
+  }
+
+  function startDrain(mask) {
+    const now = performance.now();
+    for (let i = 0; i < 3; i++) {
+      if (mask & (1 << i)) {
+        gaugeAnims[i] = { type: 'drain', start: now, from: gauges[i] };
+      }
+    }
+    if (!gaugeRafId) gaugeRafId = requestAnimationFrame(tickGauges);
+  }
+
+  function startRefill(mask) {
+    const now = performance.now();
+    for (let i = 0; i < 3; i++) {
+      if (mask & (1 << i)) {
+        gaugeAnims[i] = { type: 'refill', start: now, from: gauges[i] };
+      }
+    }
+    if (!gaugeRafId) gaugeRafId = requestAnimationFrame(tickGauges);
+  }
+
+  // --- Status display and WebSocket connection ---
   function setStatus(text, color) {
     statusText.textContent = text;
     statusDot.style.background = color;
+  }
+
+  function updateZoneClasses(mask) {
+    for (let i = 0; i < 3; i++) {
+      zones[i].classList.toggle('active', !!(mask & (1 << i)));
+    }
   }
 
   function connect() {
@@ -129,7 +264,7 @@
     };
 
     ws.onclose = () => {
-      setStatus('Disconnected', '#0000ff');
+      setStatus('Disconnected', '#4466ff');
       setTimeout(connect, 1000);
     };
 
@@ -138,100 +273,116 @@
         const data = JSON.parse(ev.data);
         lastHoldMs = data.last_hold_ms || lastHoldMs;
         lastMsEl.textContent = lastHoldMs;
-        lastDeviceElapsed = data.elapsed_ms || 0;
-        heldMsEl.textContent = lastDeviceElapsed;
+        if (!isDown) heldMsEl.textContent = data.elapsed_ms || 0;
+
+        const firing = data.firing;
+        if (Array.isArray(firing)) {
+          serverFiring = [!!firing[0], !!firing[1], !!firing[2]];
+        }
+        const anyFiring = serverFiring.some(Boolean);
 
         if (data.error) {
           setStatus('Error', '#e63946');
         } else if (data.connected === false) {
-          setStatus('Disconnected', '#0000ff');
-        } else if (data.firing) {
+          setStatus('Disconnected', '#4466ff');
+        } else if (anyFiring) {
           setStatus('Firing', '#ff8a00');
         } else if (data.ready) {
           setStatus('Ready', '#1db954');
         } else {
           setStatus('Idle', '#7a8aa0');
         }
-      } catch (e) {
-        // ignore
-      }
+
+        if (!isDown) {
+          let serverMask = 0;
+          for (let i = 0; i < 3; i++) {
+            if (serverFiring[i]) serverMask |= (1 << i);
+          }
+          updateZoneClasses(serverMask);
+        }
+
+        if (isDown && !anyFiring) {
+          const savedMask = activeMask;
+          isDown = false;
+          activeMask = 0;
+          updateZoneClasses(0);
+          vennSvg.classList.remove('cooldown');
+          startRefill(savedMask);
+        }
+      } catch (e) { /* ignore */ }
     };
   }
 
-  function startDrain() {
-    cancelAnimationFrame(rafId);
-    const start = performance.now();
-    const startGauge = gauge;
-
+  // --- Cooldown overlay (enforces min-hold visually) ---
+  function startCooldown(remainMs) {
+    vennSvg.classList.add('cooldown');
+    cooldownUntil = performance.now() + remainMs;
+    cooldownText.classList.add('visible');
+    cancelAnimationFrame(cooldownRafId);
     const tick = (now) => {
-      if (!isDown) return;
-      const elapsed = now - start;
-      if (elapsed >= MAX_MS) {
-        setGauge(0);
-        heldMsEl.textContent = Math.round(MAX_MS);
-        startRefill(MAX_MS);
+      const left = cooldownUntil - now;
+      if (left <= 0) {
+        vennSvg.classList.remove('cooldown');
+        cooldownText.classList.remove('visible');
+        cooldownText.textContent = '';
+        cooldownUntil = 0;
         return;
       }
-      const next = startGauge - (elapsed / MAX_MS);
-      setGauge(next);
-      heldMsEl.textContent = Math.round(elapsed);
-      rafId = requestAnimationFrame(tick);
+      cooldownText.textContent = 'Ready in ' + Math.ceil(left) + 'ms';
+      cooldownRafId = requestAnimationFrame(tick);
     };
-    rafId = requestAnimationFrame(tick);
-  }
-
-  function startRefill(duration) {
-    cancelAnimationFrame(rafId);
-    const start = performance.now();
-    const from = gauge;
-    const dur = Math.max(10, duration);
-    const tick = (now) => {
-      const elapsed = now - start;
-      const t = Math.min(1, elapsed / dur);
-      setGauge(from + (1 - from) * t);
-      if (t < 1) {
-        rafId = requestAnimationFrame(tick);
-      }
-    };
-    rafId = requestAnimationFrame(tick);
+    cooldownRafId = requestAnimationFrame(tick);
   }
 
   function send(msg) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(msg);
-    }
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(msg);
   }
 
-  function handleDown() {
+  // --- Touch/pointer event handling ---
+  function getTouchCoords(e) {
+    if (e.touches && e.touches.length > 0) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function handleDown(e) {
     if (isDown) return;
+    if (cooldownUntil > performance.now()) return;
+    const coords = getTouchCoords(e);
+    const mask = getChannelMask(coords.x, coords.y);
+    if (mask === 0) return;
     isDown = true;
+    activeMask = mask;
     pressStart = performance.now();
-    fireBtn.classList.add('active');
-    send('DOWN');
-    startDrain();
+    updateZoneClasses(mask);
+    send('DOWN:' + mask);
+    startDrain(mask);
   }
 
   function handleUp() {
     if (!isDown) return;
+    const savedMask = activeMask;
     isDown = false;
-    fireBtn.classList.remove('active');
+    activeMask = 0;
+    updateZoneClasses(0);
     send('UP');
-
     const held = performance.now() - pressStart;
+    if (held < MIN_HOLD_MS) startCooldown(MIN_HOLD_MS - held);
     const clamped = Math.min(MAX_MS, Math.max(250, held));
     lastHoldMs = clamped;
     lastMsEl.textContent = Math.round(clamped);
-    startRefill(clamped);
+    startRefill(savedMask);
   }
 
-  fireBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-  fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); handleDown(); });
-  document.addEventListener('pointerup', (e) => { if (isDown) handleUp(); });
+  vennSvg.addEventListener('contextmenu', (e) => e.preventDefault());
+  vennSvg.addEventListener('pointerdown', (e) => { e.preventDefault(); handleDown(e); });
+  document.addEventListener('pointerup', () => { if (isDown) handleUp(); });
   document.addEventListener('pointercancel', handleUp);
-  fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(); }, { passive: false });
-  fireBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleUp(); }, { passive: false });
+  vennSvg.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(e); }, { passive: false });
+  document.addEventListener('touchend', (e) => { if (isDown) { e.preventDefault(); handleUp(); } }, { passive: false });
 
-  setGauge(1.0);
+  for (let i = 0; i < 3; i++) setGauge(i, 1);
   connect();
   setInterval(() => send('PING'), 1000);
 })();

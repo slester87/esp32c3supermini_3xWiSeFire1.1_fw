@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -32,9 +33,37 @@
 #define AP_MAX_CONN 4
 
 #define WS_URI "/ws"
+
+/* -----------------------------------------------------------------------
+ * Safety timing constants
+ *
+ * Multiple independent mechanisms prevent runaway fire:
+ *
+ * 1. MIN_HOLD_MS  -- Minimum solenoid activation. Prevents rapid on/off
+ *    cycling that could damage valves. If the user releases early the
+ *    solenoid stays open until this time elapses.
+ *
+ * 2. MAX_HOLD_MS  -- Maximum solenoid activation. Solenoid auto-closes
+ *    after this limit regardless of user input. Sets ignore_until_release
+ *    to prevent re-firing until the user lifts their finger.
+ *
+ * 3. SOLENOID_KICK_MS -- Full-power pulse before reducing to hold level.
+ *    (Currently a no-op; see SOLENOID_HOLD_LEVEL below.)
+ *
+ * 4. WebSocket watchdog (2 s, in status_task) -- If no message arrives
+ *    for 2 seconds all channels stop and state becomes DISCONNECTED.
+ *
+ * 5. status_task backup max-hold -- Polls every 200 ms as defense-in-
+ *    depth behind the per-channel max_hold_timers.
+ * ----------------------------------------------------------------------- */
 #define MAX_HOLD_MS 3000
 #define MIN_HOLD_MS 250
 #define SOLENOID_KICK_MS 50
+
+/* WiSeFire 1.1 uses the pixel value as an on/off gate, not PWM current
+ * control. 255 matches the initial kick level, making the kick timer a
+ * no-op. The timer infrastructure is retained for future hardware that
+ * supports PWM hold-off. */
 #define SOLENOID_HOLD_LEVEL 255
 
 #define STATUS_LED_INDEX 0
@@ -43,6 +72,19 @@
 
 #define GPIO_NEOPIXEL GPIO_NUM_4
 
+/* -----------------------------------------------------------------------
+ * Multi-channel solenoid control
+ *
+ * Three solenoid channels are driven via a single WS2812 pixel:
+ *   Pixel 1 color: R = channel 0, G = channel 1, B = channel 2
+ *   Value 255 = solenoid open, 0 = solenoid closed.
+ *
+ * Channels are addressed by bitmask (bit 0 = ch0, bit 1 = ch1, etc.).
+ * WebSocket protocol: "DOWN:<mask>" where mask is 1-7, "UP" releases all.
+ * Each channel has independent max_hold, min_hold, and kick timers.
+ * ----------------------------------------------------------------------- */
+#define NUM_CHANNELS 3
+
 #define TAG "poofer"
 
 typedef enum {
@@ -50,19 +92,24 @@ typedef enum {
     STATE_READY,
     STATE_FIRING,
     STATE_DISCONNECTED,
-    STATE_ERROR,
+    STATE_ERROR, /* Reserved. No code path currently transitions here. */
 } system_state_t;
 
 typedef struct {
-    system_state_t state;
-    bool press_active;
-    bool press_ignore_until_release;
+    bool active;
+    bool ignore_until_release;
     bool release_pending;
-    int64_t press_start_us;
+    uint8_t level;
+} channel_state_t;
+
+typedef struct {
+    system_state_t state;
+    channel_state_t channels[NUM_CHANNELS];
+    uint8_t active_mask;
+    int64_t press_start_us; /* Shared across channels. See start_channels_locked(). */
     uint32_t last_hold_ms;
     int64_t last_ws_rx_us;
     bool ws_connected;
-    uint8_t solenoid_level;
     uint8_t status_r;
     uint8_t status_g;
     uint8_t status_b;
@@ -73,22 +120,20 @@ static httpd_handle_t httpd = NULL;
 static int ws_client_fd = -1;
 static runtime_state_t runtime = {
     .state = STATE_BOOT,
-    .press_active = false,
-    .press_ignore_until_release = false,
-    .release_pending = false,
+    .channels = {{0}},
+    .active_mask = 0,
     .press_start_us = 0,
     .last_hold_ms = MIN_HOLD_MS,
     .last_ws_rx_us = 0,
     .ws_connected = false,
-    .solenoid_level = 0,
     .status_r = 0,
     .status_g = 0,
     .status_b = 0,
 };
 static SemaphoreHandle_t state_lock;
-static esp_timer_handle_t max_hold_timer;
-static esp_timer_handle_t min_hold_timer;
-static esp_timer_handle_t solenoid_kick_timer;
+static esp_timer_handle_t max_hold_timers[NUM_CHANNELS];
+static esp_timer_handle_t min_hold_timers[NUM_CHANNELS];
+static esp_timer_handle_t solenoid_kick_timers[NUM_CHANNELS];
 
 static void refresh_pixels_locked(void) {
     if (!strip) {
@@ -96,15 +141,15 @@ static void refresh_pixels_locked(void) {
     }
     led_strip_set_pixel(strip, STATUS_LED_INDEX, runtime.status_r, runtime.status_g,
                         runtime.status_b);
-    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
-                        runtime.solenoid_level);
-    led_strip_set_pixel(strip, FIRING_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
-                        runtime.solenoid_level);
+    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, runtime.channels[0].level,
+                        runtime.channels[1].level, runtime.channels[2].level);
+    led_strip_set_pixel(strip, FIRING_PIXEL_INDEX, runtime.channels[0].level,
+                        runtime.channels[1].level, runtime.channels[2].level);
     led_strip_refresh(strip);
 }
 
-static void set_solenoid_level_locked(uint8_t level) {
-    runtime.solenoid_level = level;
+static void set_channel_level_locked(int ch, uint8_t level) {
+    runtime.channels[ch].level = level;
     refresh_pixels_locked();
 }
 
@@ -140,6 +185,16 @@ static void update_status_led_locked(void) {
     refresh_pixels_locked();
 }
 
+static void recalc_active_mask_locked(void) {
+    uint8_t mask = 0;
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        if (runtime.channels[i].active) {
+            mask |= (uint8_t)(1 << i);
+        }
+    }
+    runtime.active_mask = mask;
+}
+
 static uint32_t clamp_hold_ms(uint32_t hold_ms) {
     if (hold_ms < MIN_HOLD_MS) {
         return MIN_HOLD_MS;
@@ -151,7 +206,7 @@ static uint32_t clamp_hold_ms(uint32_t hold_ms) {
 }
 
 static uint32_t current_elapsed_ms_locked(void) {
-    if (!runtime.press_active) {
+    if (runtime.active_mask == 0) {
         return 0;
     }
     int64_t now = esp_timer_get_time();
@@ -167,9 +222,9 @@ static void send_state_async(void) {
         return;
     }
 
-    char payload[192];
+    char payload[256];
     bool ready = false;
-    bool firing = false;
+    bool firing[NUM_CHANNELS] = {false};
     bool error = false;
     bool connected = false;
     uint32_t elapsed = 0;
@@ -177,7 +232,9 @@ static void send_state_async(void) {
 
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
         ready = (runtime.state == STATE_READY || runtime.state == STATE_FIRING);
-        firing = (runtime.state == STATE_FIRING);
+        for (int i = 0; i < NUM_CHANNELS; i++) {
+            firing[i] = runtime.channels[i].active;
+        }
         error = (runtime.state == STATE_ERROR);
         connected = runtime.ws_connected;
         elapsed = current_elapsed_ms_locked();
@@ -185,11 +242,14 @@ static void send_state_async(void) {
         xSemaphoreGive(state_lock);
     }
 
+    const char* t = "true";
+    const char* f = "false";
     int len = snprintf(payload, sizeof(payload),
-                       "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,"
+                       "{\"ready\":%s,\"firing\":[%s,%s,%s],"
+                       "\"error\":%s,\"connected\":%s,"
                        "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
-                       ready ? "true" : "false", firing ? "true" : "false",
-                       error ? "true" : "false", connected ? "true" : "false", elapsed, last_hold);
+                       ready ? t : f, firing[0] ? t : f, firing[1] ? t : f, firing[2] ? t : f,
+                       error ? t : f, connected ? t : f, elapsed, last_hold);
     if (len <= 0 || len >= (int)sizeof(payload)) {
         return;
     }
@@ -204,36 +264,58 @@ static void send_state_async(void) {
     httpd_ws_send_frame_async(httpd, ws_client_fd, &frame);
 }
 
-static void stop_firing_locked(system_state_t next_state) {
-    runtime.press_active = false;
-    runtime.release_pending = false;
+static void stop_channel_locked(int ch) {
+    runtime.channels[ch].active = false;
+    runtime.channels[ch].release_pending = false;
+    runtime.channels[ch].level = 0;
+    esp_timer_stop(solenoid_kick_timers[ch]);
+    recalc_active_mask_locked();
+}
+
+static void stop_all_channels_locked(system_state_t next_state) {
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        runtime.channels[i].active = false;
+        runtime.channels[i].release_pending = false;
+        runtime.channels[i].level = 0;
+    }
+    runtime.active_mask = 0;
     runtime.state = next_state;
-    set_solenoid_level_locked(0);
     update_status_led_locked();
 }
 
-static void start_firing_locked(void) {
+static void start_channels_locked(uint8_t mask) {
     runtime.state = STATE_FIRING;
-    runtime.press_active = true;
-    runtime.release_pending = false;
+    /* Shared timestamp -- if a custom client sends DOWN:1 then DOWN:2, the
+     * second call overwrites this. Per-channel max_hold_timers are independent
+     * and fire correctly regardless. The UI sends a single DOWN per gesture. */
     runtime.press_start_us = esp_timer_get_time();
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        if (mask & (1 << i)) {
+            runtime.channels[i].active = true;
+            runtime.channels[i].release_pending = false;
+            runtime.channels[i].level = 255;
+        }
+    }
+    recalc_active_mask_locked();
     update_status_led_locked();
-    set_solenoid_level_locked(255);
 }
 
 static void max_hold_timer_cb(void* arg) {
-    (void)arg;
+    int ch = (int)(intptr_t)arg;
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
     }
 
-    if (runtime.press_active) {
-        runtime.last_hold_ms = MAX_HOLD_MS;
-        runtime.press_active = false;
-        runtime.press_ignore_until_release = true;
-        runtime.state = STATE_READY;
-        set_solenoid_level_locked(0);
-        update_status_led_locked();
+    if (runtime.channels[ch].active) {
+        runtime.channels[ch].ignore_until_release = true;
+        stop_channel_locked(ch);
+        refresh_pixels_locked();
+
+        if (runtime.active_mask == 0) {
+            runtime.last_hold_ms = MAX_HOLD_MS;
+            runtime.state = STATE_READY;
+            update_status_led_locked();
+        }
     }
 
     xSemaphoreGive(state_lock);
@@ -241,50 +323,78 @@ static void max_hold_timer_cb(void* arg) {
 }
 
 static void min_hold_timer_cb(void* arg) {
-    (void)arg;
+    int ch = (int)(intptr_t)arg;
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
     }
 
-    if (runtime.press_active && runtime.release_pending) {
-        stop_firing_locked(STATE_READY);
+    if (runtime.channels[ch].active && runtime.channels[ch].release_pending) {
+        stop_channel_locked(ch);
+        refresh_pixels_locked();
+
+        if (runtime.active_mask == 0) {
+            runtime.state = STATE_READY;
+            update_status_led_locked();
+        }
     }
 
     xSemaphoreGive(state_lock);
     send_state_async();
 }
 
+/* With SOLENOID_HOLD_LEVEL == 255 this callback is a no-op (level stays
+ * at the initial kick value). See comment at SOLENOID_HOLD_LEVEL. */
 static void solenoid_kick_timer_cb(void* arg) {
-    (void)arg;
+    int ch = (int)(intptr_t)arg;
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
     }
 
-    if (runtime.state == STATE_FIRING) {
-        set_solenoid_level_locked(SOLENOID_HOLD_LEVEL);
+    if (runtime.channels[ch].active) {
+        set_channel_level_locked(ch, SOLENOID_HOLD_LEVEL);
     }
 
     xSemaphoreGive(state_lock);
 }
 
-static void handle_press_down(void) {
+static void handle_press_down_mask(uint8_t mask) {
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
     }
 
-    if (runtime.state == STATE_ERROR || runtime.press_active ||
-        runtime.press_ignore_until_release) {
+    if (runtime.state == STATE_ERROR) {
         xSemaphoreGive(state_lock);
         return;
     }
 
-    start_firing_locked();
+    uint8_t effective = 0;
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        if (!(mask & (1 << i))) {
+            continue;
+        }
+        if (runtime.channels[i].active || runtime.channels[i].ignore_until_release) {
+            continue;
+        }
+        effective |= (uint8_t)(1 << i);
+    }
 
-    esp_timer_stop(max_hold_timer);
-    esp_timer_start_once(max_hold_timer, (uint64_t)MAX_HOLD_MS * 1000ULL);
+    if (effective == 0) {
+        xSemaphoreGive(state_lock);
+        return;
+    }
 
-    esp_timer_stop(solenoid_kick_timer);
-    esp_timer_start_once(solenoid_kick_timer, (uint64_t)SOLENOID_KICK_MS * 1000ULL);
+    start_channels_locked(effective);
+
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        if (!(effective & (1 << i))) {
+            continue;
+        }
+        esp_timer_stop(max_hold_timers[i]);
+        esp_timer_start_once(max_hold_timers[i], (uint64_t)MAX_HOLD_MS * 1000ULL);
+
+        esp_timer_stop(solenoid_kick_timers[i]);
+        esp_timer_start_once(solenoid_kick_timers[i], (uint64_t)SOLENOID_KICK_MS * 1000ULL);
+    }
 
     xSemaphoreGive(state_lock);
     send_state_async();
@@ -295,11 +405,11 @@ static void handle_press_up(void) {
         return;
     }
 
-    if (runtime.press_ignore_until_release) {
-        runtime.press_ignore_until_release = false;
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        runtime.channels[i].ignore_until_release = false;
     }
 
-    if (!runtime.press_active) {
+    if (runtime.active_mask == 0) {
         xSemaphoreGive(state_lock);
         return;
     }
@@ -313,18 +423,25 @@ static void handle_press_up(void) {
     runtime.last_hold_ms = clamp_hold_ms(held_ms);
 
     if (held_ms < MIN_HOLD_MS) {
-        runtime.release_pending = true;
-        esp_timer_stop(min_hold_timer);
-        esp_timer_start_once(min_hold_timer, (uint64_t)(MIN_HOLD_MS - held_ms) * 1000ULL);
+        for (int i = 0; i < NUM_CHANNELS; i++) {
+            if (runtime.channels[i].active) {
+                runtime.channels[i].release_pending = true;
+                esp_timer_stop(min_hold_timers[i]);
+                esp_timer_start_once(min_hold_timers[i],
+                                     (uint64_t)(MIN_HOLD_MS - held_ms) * 1000ULL);
+            }
+        }
         xSemaphoreGive(state_lock);
         send_state_async();
         return;
     }
 
-    stop_firing_locked(STATE_READY);
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        esp_timer_stop(max_hold_timers[i]);
+        esp_timer_stop(min_hold_timers[i]);
+    }
 
-    esp_timer_stop(max_hold_timer);
-    esp_timer_stop(min_hold_timer);
+    stop_all_channels_locked(STATE_READY);
 
     xSemaphoreGive(state_lock);
     send_state_async();
@@ -346,8 +463,12 @@ static void handle_ws_message(const char* msg) {
         xSemaphoreGive(state_lock);
     }
 
-    if (strcmp(msg, "DOWN") == 0) {
-        handle_press_down();
+    if (strncmp(msg, "DOWN:", 5) == 0) {
+        if (msg[5] >= '1' && msg[5] <= '7' && msg[6] == '\0') {
+            handle_press_down_mask((uint8_t)(msg[5] - '0'));
+        }
+    } else if (strcmp(msg, "DOWN") == 0) {
+        handle_press_down_mask(7);
     } else if (strcmp(msg, "UP") == 0) {
         handle_press_up();
     } else if (strcmp(msg, "PING") == 0) {
@@ -379,6 +500,13 @@ static esp_err_t ws_handler(httpd_req_t* req) {
         return err;
     }
 
+    /* Reject oversized frames. Valid messages are at most 6 bytes
+     * (e.g. "DOWN:7"). Cap prevents heap exhaustion from crafted
+     * frames on the open AP network. */
+    if (frame.len > 64) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     char* buf = calloc(1, frame.len + 1);
     if (!buf) {
         return ESP_ERR_NO_MEM;
@@ -395,40 +523,33 @@ static esp_err_t ws_handler(httpd_req_t* req) {
 }
 
 static esp_err_t send_file(httpd_req_t* req, const char* path, const char* content_type) {
-    FILE* file = fopen(path, "r");
-    if (!file) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
         return ESP_FAIL;
     }
 
     httpd_resp_set_type(req, content_type);
 
-    int fd = fileno(file);
-    if (fd < 0) {
-        fclose(file);
-        httpd_resp_sendstr_chunk(req, NULL);
-        return ESP_FAIL;
-    }
-
     char buffer[512];
     for (;;) {
-        ssize_t read_bytes = read(fd, buffer, sizeof(buffer));
-        if (read_bytes > 0) {
-            if (httpd_resp_send_chunk(req, buffer, (size_t)read_bytes) != ESP_OK) {
-                fclose(file);
+        ssize_t n = read(fd, buffer, sizeof(buffer));
+        if (n > 0) {
+            if (httpd_resp_send_chunk(req, buffer, (size_t)n) != ESP_OK) {
+                close(fd);
                 httpd_resp_sendstr_chunk(req, NULL);
                 return ESP_FAIL;
             }
             continue;
         }
-        if (read_bytes < 0) {
-            fclose(file);
+        if (n < 0) {
+            close(fd);
             httpd_resp_sendstr_chunk(req, NULL);
             return ESP_FAIL;
         }
         break;
     }
-    fclose(file);
+    close(fd);
     httpd_resp_sendstr_chunk(req, NULL);
     return ESP_OK;
 }
@@ -470,6 +591,9 @@ static void url_decode(char* dst, const char* src) {
     *dst = '\0';
 }
 
+/* Simple form parser. Uses strstr so a key like "pass" can match inside
+ * another field name (e.g. "xpass"). Acceptable: callers only use "ssid"
+ * and "pass" with the browser form from wifi.html. */
 static void parse_form_value(const char* body, const char* key, char* out, size_t out_len) {
     if (!body || !key || !out || out_len == 0) {
         return;
@@ -704,26 +828,42 @@ static void status_task(void* arg) {
     (void)arg;
     while (true) {
         bool should_send = false;
-        bool should_stop = false;
         if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
             int64_t now = esp_timer_get_time();
-            if (runtime.press_active) {
+
+            /* Defense-in-depth: backup max-hold check. The primary
+             * max_hold_timer_cb fires per-channel via esp_timer. This
+             * polling check catches any case where the timer callback
+             * failed to acquire the lock or was not started. */
+            if (runtime.active_mask != 0) {
                 int64_t elapsed = now - runtime.press_start_us;
                 if (elapsed >= (int64_t)MAX_HOLD_MS * 1000LL) {
+                    for (int i = 0; i < NUM_CHANNELS; i++) {
+                        if (runtime.channels[i].active) {
+                            runtime.channels[i].ignore_until_release = true;
+                            stop_channel_locked(i);
+                        }
+                    }
                     runtime.last_hold_ms = MAX_HOLD_MS;
-                    runtime.press_active = false;
-                    runtime.press_ignore_until_release = true;
-                    runtime.state = STATE_READY;
-                    update_status_led_locked();
+                    if (runtime.active_mask == 0) {
+                        runtime.state = STATE_READY;
+                        update_status_led_locked();
+                    }
+                    refresh_pixels_locked();
                     should_send = true;
                 }
             }
 
-            if (runtime.press_active && runtime.last_ws_rx_us != 0) {
+            if (runtime.active_mask != 0 && runtime.last_ws_rx_us != 0) {
                 if ((now - runtime.last_ws_rx_us) > 2000000) {
-                    stop_firing_locked(STATE_DISCONNECTED);
+                    for (int i = 0; i < NUM_CHANNELS; i++) {
+                        esp_timer_stop(max_hold_timers[i]);
+                        esp_timer_stop(min_hold_timers[i]);
+                        esp_timer_stop(solenoid_kick_timers[i]);
+                    }
+                    stop_all_channels_locked(STATE_DISCONNECTED);
                     runtime.ws_connected = false;
-                    should_stop = true;
+                    should_send = true;
                 }
             }
             if (runtime.ws_connected && runtime.last_ws_rx_us != 0 &&
@@ -738,7 +878,7 @@ static void status_task(void* arg) {
             xSemaphoreGive(state_lock);
         }
 
-        if (should_send || should_stop) {
+        if (should_send) {
             send_state_async();
         }
         vTaskDelay(pdMS_TO_TICKS(200));
@@ -761,7 +901,7 @@ static void init_led_strip(void) {
     };
     led_strip_new_rmt_device(&strip_config, &rmt_config, &strip);
     update_status_led_locked();
-    set_solenoid_level_locked(0);
+    refresh_pixels_locked();
 }
 
 void app_main(void) {
@@ -774,23 +914,31 @@ void app_main(void) {
 
     init_led_strip();
 
-    const esp_timer_create_args_t timer_args = {
-        .callback = &max_hold_timer_cb,
-        .name = "max_hold",
-    };
-    esp_timer_create(&timer_args, &max_hold_timer);
+    static const char* max_names[NUM_CHANNELS] = {"ch0_max", "ch1_max", "ch2_max"};
+    static const char* min_names[NUM_CHANNELS] = {"ch0_min", "ch1_min", "ch2_min"};
+    static const char* kick_names[NUM_CHANNELS] = {"ch0_kick", "ch1_kick", "ch2_kick"};
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        const esp_timer_create_args_t max_args = {
+            .callback = &max_hold_timer_cb,
+            .arg = (void*)(intptr_t)i,
+            .name = max_names[i],
+        };
+        esp_timer_create(&max_args, &max_hold_timers[i]);
 
-    const esp_timer_create_args_t min_hold_args = {
-        .callback = &min_hold_timer_cb,
-        .name = "min_hold",
-    };
-    esp_timer_create(&min_hold_args, &min_hold_timer);
+        const esp_timer_create_args_t min_args = {
+            .callback = &min_hold_timer_cb,
+            .arg = (void*)(intptr_t)i,
+            .name = min_names[i],
+        };
+        esp_timer_create(&min_args, &min_hold_timers[i]);
 
-    const esp_timer_create_args_t kick_args = {
-        .callback = &solenoid_kick_timer_cb,
-        .name = "sol_kick",
-    };
-    esp_timer_create(&kick_args, &solenoid_kick_timer);
+        const esp_timer_create_args_t kick_args = {
+            .callback = &solenoid_kick_timer_cb,
+            .arg = (void*)(intptr_t)i,
+            .name = kick_names[i],
+        };
+        esp_timer_create(&kick_args, &solenoid_kick_timers[i]);
+    }
 
     mount_spiffs();
     wifi_init_ap_sta();
