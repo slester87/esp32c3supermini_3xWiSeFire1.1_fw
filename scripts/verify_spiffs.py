@@ -32,7 +32,6 @@ def _has_spiffs_entry() -> bool:
     return False
 
 
-
 def main() -> None:
     if not SPIFFS_BIN.exists():
         _fail(f"Missing {SPIFFS_BIN}")

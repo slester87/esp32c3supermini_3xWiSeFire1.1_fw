@@ -26,8 +26,8 @@ def main() -> None:
     required = [
         '"/"',
         '"/wifi"',
-        'index_handler',
-        'wifi_get_handler',
+        "index_handler",
+        "wifi_get_handler",
     ]
 
     for token in required:
