@@ -15,14 +15,22 @@ def _fail(msg: str) -> None:
     sys.exit(1)
 
 
-def _load_spiffs_offset() -> int:
+def _has_spiffs_entry() -> bool:
     if not FLASHER_ARGS.exists():
         _fail(f"Missing {FLASHER_ARGS}")
     data = json.loads(FLASHER_ARGS.read_text())
-    for item in data.get("flash_files", []):
-        if str(item.get("path", "")).endswith("spiffs.bin"):
-            return int(item.get("offset", "0"), 0)
-    _fail("spiffs.bin offset not found in flasher_args.json")
+    flash_files = data.get("flash_files", {})
+
+    if isinstance(flash_files, dict):
+        return any(str(path).endswith("spiffs.bin") for path in flash_files.values())
+
+    if isinstance(flash_files, list):
+        for item in flash_files:
+            if isinstance(item, dict) and str(item.get("path", "")).endswith("spiffs.bin"):
+                return True
+        return False
+
+    return False
 
 
 
@@ -30,9 +38,8 @@ def main() -> None:
     if not SPIFFS_BIN.exists():
         _fail(f"Missing {SPIFFS_BIN}")
 
-    offset = _load_spiffs_offset()
-    if offset <= 0:
-        _fail("Invalid SPIFFS offset")
+    if not _has_spiffs_entry():
+        _fail("spiffs.bin not listed in flasher_args.json")
 
     # spiffs.bin should start with magic bytes 0xE5 0xE5
     with SPIFFS_BIN.open("rb") as f:
