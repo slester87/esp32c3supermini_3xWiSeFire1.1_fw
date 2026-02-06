@@ -1,6 +1,25 @@
 # Install
 
-This guide walks through a full local setup for building, flashing, and monitoring the Poofer firmware.
+## Docker (no local toolchain required)
+
+If you have Docker installed, you can build, lint, and develop the UI without installing ESP-IDF or clang tools locally.
+
+```bash
+make build     # Build firmware
+make lint      # Run all linters
+make verify    # Run verification scripts
+make shell     # Interactive shell in build container
+make ui        # Start mock UI server on localhost:8080
+make clean     # Remove build caches
+```
+
+The mock UI server at `http://localhost:8080` simulates the firmware's WebSocket behavior, so you can develop and test the control interface without hardware.
+
+See `Makefile` for all available targets.
+
+## Local Setup
+
+This section walks through a full local setup for building, flashing, and monitoring the Poofer firmware.
 
 ## Prerequisites
 

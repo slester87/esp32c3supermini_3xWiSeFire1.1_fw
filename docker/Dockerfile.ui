@@ -1,0 +1,9 @@
+FROM python:3.13-slim
+
+RUN pip install --no-cache-dir websockets
+
+WORKDIR /project
+
+EXPOSE 8080
+
+CMD ["python3", "docker/mock_server.py"]

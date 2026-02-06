@@ -1,0 +1,27 @@
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.builder
+    volumes:
+      - .:/project
+      - build-cache:/project/firmware/build
+      - components-cache:/project/firmware/managed_components
+    profiles:
+      - build
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    volumes:
+      - ./firmware/spiffs:/project/firmware/spiffs:ro
+      - ./docker:/project/docker:ro
+    ports:
+      - "8080:8080"
+    profiles:
+      - ui
+
+volumes:
+  build-cache:
+  components-cache:
