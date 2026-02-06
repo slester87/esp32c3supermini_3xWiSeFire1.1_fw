@@ -39,6 +39,7 @@
 
 #define STATUS_LED_INDEX 0
 #define SOLENOID_PIXEL_INDEX 1
+#define FIRING_PIXEL_INDEX 2
 
 #define GPIO_NEOPIXEL GPIO_NUM_4
 
@@ -96,6 +97,8 @@ static void refresh_pixels_locked(void) {
     led_strip_set_pixel(strip, STATUS_LED_INDEX, runtime.status_r, runtime.status_g,
                         runtime.status_b);
     led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
+                        runtime.solenoid_level);
+    led_strip_set_pixel(strip, FIRING_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
                         runtime.solenoid_level);
     led_strip_refresh(strip);
 }
@@ -745,7 +748,7 @@ static void status_task(void* arg) {
 static void init_led_strip(void) {
     led_strip_config_t strip_config = {
         .strip_gpio_num = GPIO_NEOPIXEL,
-        .max_leds = 2,
+        .max_leds = 3,
         .led_model = LED_MODEL_WS2812,
         .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
         .flags.invert_out = false,
