@@ -78,6 +78,7 @@ State messages from device to client:
   "firing": false,
   "error": false,
   "connected": true,
+  "seq": 42,
   "elapsed_ms": 0,
   "last_hold_ms": 250
 }
