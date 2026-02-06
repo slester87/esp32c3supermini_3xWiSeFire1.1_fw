@@ -160,6 +160,9 @@
           setStatus('Idle', '#7a8aa0');
         }
 
+        if (isDown && data.connected !== false && !data.error) {
+          setStatus('Firing', '#ff8a00');
+        }
       } catch (e) {
         // ignore
       }
@@ -215,9 +218,6 @@
     isDown = true;
     pressStart = performance.now();
     fireBtn.classList.add('active');
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      setStatus('Firing', '#ff8a00');
-    }
     send('DOWN');
     startDrain();
   }
