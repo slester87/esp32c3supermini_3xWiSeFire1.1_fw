@@ -34,7 +34,7 @@
 #define MAX_HOLD_MS 3000
 #define MIN_HOLD_MS 250
 #define SOLENOID_KICK_MS 50
-#define SOLENOID_HOLD_LEVEL 5
+#define SOLENOID_HOLD_LEVEL 255
 
 #define STATUS_LED_INDEX 0
 #define SOLENOID_PIXEL_INDEX 1
@@ -94,7 +94,8 @@ static void refresh_pixels_locked(void) {
     }
     led_strip_set_pixel(strip, STATUS_LED_INDEX, runtime.status_r, runtime.status_g,
                         runtime.status_b);
-    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, 0, runtime.solenoid_level, 0);
+    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
+                        runtime.solenoid_level);
     led_strip_refresh(strip);
 }
 
