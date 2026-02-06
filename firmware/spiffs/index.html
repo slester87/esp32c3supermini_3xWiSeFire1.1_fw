@@ -106,7 +106,6 @@
   let rafId = null;
   let gauge = 1.0;
   let lastDeviceElapsed = 0;
-  let lastSeq = 0;
 
   const MAX_MS = 3000;
 
@@ -142,12 +141,6 @@
         lastDeviceElapsed = data.elapsed_ms || 0;
         heldMsEl.textContent = lastDeviceElapsed;
 
-        if (typeof data.seq === 'number' && data.seq <= lastSeq) {
-          return;
-        }
-        if (typeof data.seq === 'number') {
-          lastSeq = data.seq;
-        }
         if (data.error) {
           setStatus('Error', '#e63946');
         } else if (data.connected === false) {
@@ -158,10 +151,6 @@
           setStatus('Ready', '#1db954');
         } else {
           setStatus('Idle', '#7a8aa0');
-        }
-
-        if (isDown && data.connected !== false && !data.error) {
-          setStatus('Firing', '#ff8a00');
         }
       } catch (e) {
         // ignore

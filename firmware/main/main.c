@@ -60,7 +60,6 @@ typedef struct {
     uint32_t last_hold_ms;
     int64_t last_ws_rx_us;
     bool ws_connected;
-    uint32_t state_seq;
     uint8_t solenoid_level;
     uint8_t status_r;
     uint8_t status_g;
@@ -79,7 +78,6 @@ static runtime_state_t runtime = {
     .last_hold_ms = MIN_HOLD_MS,
     .last_ws_rx_us = 0,
     .ws_connected = false,
-    .state_seq = 0,
     .solenoid_level = 0,
     .status_r = 0,
     .status_g = 0,
@@ -169,7 +167,6 @@ static void send_state_async(void) {
     bool firing = false;
     bool error = false;
     bool connected = false;
-    uint32_t seq = 0;
     uint32_t elapsed = 0;
     uint32_t last_hold = 0;
 
@@ -178,18 +175,16 @@ static void send_state_async(void) {
         firing = (runtime.state == STATE_FIRING);
         error = (runtime.state == STATE_ERROR);
         connected = runtime.ws_connected;
-        seq = ++runtime.state_seq;
         elapsed = current_elapsed_ms_locked();
         last_hold = runtime.last_hold_ms;
         xSemaphoreGive(state_lock);
     }
 
-    int len =
-        snprintf(payload, sizeof(payload),
-                 "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,\"seq\":%" PRIu32
-                 ",\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
-                 ready ? "true" : "false", firing ? "true" : "false", error ? "true" : "false",
-                 connected ? "true" : "false", seq, elapsed, last_hold);
+    int len = snprintf(payload, sizeof(payload),
+                       "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,"
+                       "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
+                       ready ? "true" : "false", firing ? "true" : "false",
+                       error ? "true" : "false", connected ? "true" : "false", elapsed, last_hold);
     if (len <= 0 || len >= (int)sizeof(payload)) {
         return;
     }
