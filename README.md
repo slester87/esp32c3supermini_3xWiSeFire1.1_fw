@@ -37,8 +37,8 @@ GPIO4 drives a 3-pixel WS2812 chain.
 - Pixel 1 blue channel -> solenoid 3
 
 This mapping is intentional and should be preserved. The firmware treats the chain as three pixels.
-Currently, the firmware drives Pixel 1 and Pixel 2 as white (`R=G=B`), so all solenoid channels are asserted
-together. On the WiSeFire board this fires solenoids 1 and 2 (solenoid 3 is not populated/connected).
+Currently, the firmware drives Pixel 1 and Pixel 2 as white (`R=G=B`). On the WiSeFire board, Pixel 1 white
+fires solenoids 1 and 2, and Pixel 2 white fires solenoid 3.
 
 ## Architecture
 
