@@ -12,6 +12,8 @@ DROP_FLAGS = {
     "-fno-shrink-wrap",
     "-fno-tree-switch-conversion",
     "-fstrict-volatile-bitfields",
+    "-nostartfiles",
+    'PROJECT_NAME="poofer"',
 }
 
 
@@ -24,7 +26,13 @@ def _filter_args(entry):
     if not args:
         return entry
 
-    filtered = [arg for arg in args if arg not in DROP_FLAGS]
+    filtered = []
+    for arg in args:
+        if arg in DROP_FLAGS:
+            continue
+        if '\\"' in arg:
+            arg = arg.replace('\\"', '"')
+        filtered.append(arg)
     entry["arguments"] = filtered
     entry.pop("command", None)
     return entry

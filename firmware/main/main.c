@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -399,14 +400,30 @@ static esp_err_t send_file(httpd_req_t* req, const char* path, const char* conte
 
     httpd_resp_set_type(req, content_type);
 
+    int fd = fileno(file);
+    if (fd < 0) {
+        fclose(file);
+        httpd_resp_sendstr_chunk(req, NULL);
+        return ESP_FAIL;
+    }
+
     char buffer[512];
-    size_t read_bytes;
-    while ((read_bytes = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        if (httpd_resp_send_chunk(req, buffer, read_bytes) != ESP_OK) {
+    for (;;) {
+        ssize_t read_bytes = read(fd, buffer, sizeof(buffer));
+        if (read_bytes > 0) {
+            if (httpd_resp_send_chunk(req, buffer, (size_t)read_bytes) != ESP_OK) {
+                fclose(file);
+                httpd_resp_sendstr_chunk(req, NULL);
+                return ESP_FAIL;
+            }
+            continue;
+        }
+        if (read_bytes < 0) {
             fclose(file);
             httpd_resp_sendstr_chunk(req, NULL);
             return ESP_FAIL;
         }
+        break;
     }
     fclose(file);
     httpd_resp_sendstr_chunk(req, NULL);
