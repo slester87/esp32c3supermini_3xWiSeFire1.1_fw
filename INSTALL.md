@@ -17,6 +17,62 @@ Optional but recommended development tools:
 - `clang-tidy`
 - `pre-commit`
 
+## Dependencies
+
+This project depends on **ESP-IDF 5.5.x** (tested with **5.5.2**) and Python 3.
+
+If `idf.py` is missing in your shell, build/flash/monitor will fail. Use this section as the recovery checklist.
+
+### Required
+
+- Python 3.11+ (`python3 --version`)
+- ESP-IDF 5.5.2 checkout (example: `/Users/skippo/Development/Codex/esp-idf-v5.5.2`)
+
+### One-Time ESP-IDF Install
+
+```bash
+cd /Users/skippo/Development/Codex/esp-idf-v5.5.2
+./install.sh
+```
+
+### Per-Shell Activation (Critical)
+
+Run this in every new terminal before using project scripts:
+
+```bash
+source /Users/skippo/Development/Codex/esp-idf-v5.5.2/export.sh
+```
+
+Verify:
+
+```bash
+which idf.py
+idf.py --version
+```
+
+Expected output should include `ESP-IDF v5.5.2`.
+
+### Optional Shell Helper
+
+Add to `~/.zshrc`:
+
+```bash
+idf55() {
+  source /Users/skippo/Development/Codex/esp-idf-v5.5.2/export.sh
+}
+```
+
+Then run `idf55` in new shells.
+
+### Project Script Breadcrumbs
+
+- `scripts/build.py`, `scripts/flash.py`, and `scripts/monitor.py` call `idf.py`.
+- Error `No such file or directory: 'idf.py'` means ESP-IDF was not activated in that shell.
+- Optional `.env` settings:
+  - `POOFER_IDF_PATH`
+  - `POOFER_IDF_PY`
+  - `POOFER_SERIAL_PORT`
+
 ## Install ESP-IDF
 
 Follow Espressif's official install guide for ESP-IDF 5.5.x.

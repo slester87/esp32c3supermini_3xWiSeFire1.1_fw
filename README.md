@@ -4,6 +4,66 @@
 
 Firmware and UI for a 3-channel WiSeFire 1.1-driven poofer controller built on an ESP32-C3 Super Mini.
 
+## Dependencies
+
+This project depends on **ESP-IDF 5.5.x** (tested with **5.5.2**) and Python 3.
+
+If `idf.py` is missing in your shell, builds/flashes will fail. Use this section as the source-of-truth recovery path.
+
+### Required
+
+- Python 3.11+ (`python3 --version`)
+- ESP-IDF 5.5.2 checkout (example path: `/Users/skippo/Development/Codex/esp-idf-v5.5.2`)
+
+### One-Time ESP-IDF Install
+
+```bash
+cd /Users/skippo/Development/Codex/esp-idf-v5.5.2
+./install.sh
+```
+
+### Per-Shell Activation (Most Important Step)
+
+Run this in every new terminal session before build/flash/monitor:
+
+```bash
+source /Users/skippo/Development/Codex/esp-idf-v5.5.2/export.sh
+```
+
+Verify:
+
+```bash
+which idf.py
+idf.py --version
+```
+
+Expected version should be `ESP-IDF v5.5.2`.
+
+### Optional: Make Activation Easier
+
+Add a helper function to `~/.zshrc`:
+
+```bash
+idf55() {
+  source /Users/skippo/Development/Codex/esp-idf-v5.5.2/export.sh
+}
+```
+
+Then use:
+
+```bash
+idf55
+```
+
+### Project-Level Breadcrumbs
+
+- `scripts/build.py`, `scripts/flash.py`, and `scripts/monitor.py` call `idf.py`.
+- If they fail with `No such file or directory: 'idf.py'`, your ESP-IDF environment is not sourced in that shell.
+- Optional `.env` knobs:
+  - `POOFER_IDF_PATH` (path to ESP-IDF)
+  - `POOFER_IDF_PY` (explicit `idf.py` path override)
+  - `POOFER_SERIAL_PORT` (default serial port for flash/monitor)
+
 ## Quick Start
 
 For a full setup guide, see `INSTALL.md`.

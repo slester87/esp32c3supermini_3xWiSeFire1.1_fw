@@ -106,8 +106,10 @@
   let rafId = null;
   let gauge = 1.0;
   let lastDeviceElapsed = 0;
+  let holdBeatTimer = null;
 
   const MAX_MS = 3000;
+  const HOLD_BEAT_MS = 50;
 
   function setGauge(value) {
     gauge = Math.max(0, Math.min(1, value));
@@ -129,6 +131,7 @@
     };
 
     ws.onclose = () => {
+      releaseLocalPressState();
       setStatus('Disconnected', '#0000ff');
       setTimeout(connect, 1000);
     };
@@ -202,12 +205,36 @@
     }
   }
 
+  function startHoldBeat() {
+    stopHoldBeat();
+    holdBeatTimer = setInterval(() => {
+      if (isDown) send('HOLD');
+    }, HOLD_BEAT_MS);
+  }
+
+  function stopHoldBeat() {
+    if (holdBeatTimer) {
+      clearInterval(holdBeatTimer);
+      holdBeatTimer = null;
+    }
+  }
+
+  function releaseLocalPressState() {
+    if (!isDown) return;
+    isDown = false;
+    fireBtn.classList.remove('active');
+    stopHoldBeat();
+    startRefill(lastHoldMs || 250);
+  }
+
   function handleDown() {
     if (isDown) return;
     isDown = true;
     pressStart = performance.now();
     fireBtn.classList.add('active');
     send('DOWN');
+    send('HOLD');
+    startHoldBeat();
     startDrain();
   }
 
@@ -215,6 +242,7 @@
     if (!isDown) return;
     isDown = false;
     fireBtn.classList.remove('active');
+    stopHoldBeat();
     send('UP');
 
     const held = performance.now() - pressStart;

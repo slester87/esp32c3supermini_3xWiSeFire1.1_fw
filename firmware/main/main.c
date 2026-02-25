@@ -36,6 +36,7 @@
 #define MIN_HOLD_MS 250
 #define SOLENOID_KICK_MS 50
 #define SOLENOID_HOLD_LEVEL 255
+#define HOLD_LIVENESS_TIMEOUT_MS 100
 
 #define STATUS_LED_INDEX 0
 #define SOLENOID_PIXEL_INDEX 1
@@ -89,6 +90,7 @@ static SemaphoreHandle_t state_lock;
 static esp_timer_handle_t max_hold_timer;
 static esp_timer_handle_t min_hold_timer;
 static esp_timer_handle_t solenoid_kick_timer;
+static esp_timer_handle_t hold_liveness_timer;
 
 static void refresh_pixels_locked(void) {
     if (!strip) {
@@ -208,6 +210,7 @@ static void stop_firing_locked(system_state_t next_state) {
     runtime.press_active = false;
     runtime.release_pending = false;
     runtime.state = next_state;
+    esp_timer_stop(hold_liveness_timer);
     set_solenoid_level_locked(0);
     update_status_led_locked();
 }
@@ -217,6 +220,8 @@ static void start_firing_locked(void) {
     runtime.press_active = true;
     runtime.release_pending = false;
     runtime.press_start_us = esp_timer_get_time();
+    esp_timer_stop(hold_liveness_timer);
+    esp_timer_start_once(hold_liveness_timer, (uint64_t)HOLD_LIVENESS_TIMEOUT_MS * 1000ULL);
     update_status_led_locked();
     set_solenoid_level_locked(255);
 }
@@ -267,6 +272,22 @@ static void solenoid_kick_timer_cb(void* arg) {
     xSemaphoreGive(state_lock);
 }
 
+static void hold_liveness_timer_cb(void* arg) {
+    (void)arg;
+    if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
+        return;
+    }
+
+    if (runtime.press_active) {
+        stop_firing_locked(STATE_DISCONNECTED);
+        runtime.ws_connected = false;
+        runtime.press_ignore_until_release = true;
+    }
+
+    xSemaphoreGive(state_lock);
+    send_state_async();
+}
+
 static void handle_press_down(void) {
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
@@ -300,6 +321,7 @@ static void handle_press_up(void) {
     }
 
     if (!runtime.press_active) {
+        esp_timer_stop(hold_liveness_timer);
         xSemaphoreGive(state_lock);
         return;
     }
@@ -348,6 +370,15 @@ static void handle_ws_message(const char* msg) {
 
     if (strcmp(msg, "DOWN") == 0) {
         handle_press_down();
+    } else if (strcmp(msg, "HOLD") == 0) {
+        if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (runtime.press_active && runtime.state == STATE_FIRING) {
+                esp_timer_stop(hold_liveness_timer);
+                esp_timer_start_once(hold_liveness_timer,
+                                     (uint64_t)HOLD_LIVENESS_TIMEOUT_MS * 1000ULL);
+            }
+            xSemaphoreGive(state_lock);
+        }
     } else if (strcmp(msg, "UP") == 0) {
         handle_press_up();
     } else if (strcmp(msg, "PING") == 0) {
@@ -791,6 +822,12 @@ void app_main(void) {
         .name = "sol_kick",
     };
     esp_timer_create(&kick_args, &solenoid_kick_timer);
+
+    const esp_timer_create_args_t hold_liveness_args = {
+        .callback = &hold_liveness_timer_cb,
+        .name = "hold_live",
+    };
+    esp_timer_create(&hold_liveness_args, &hold_liveness_timer);
 
     mount_spiffs();
     wifi_init_ap_sta();
