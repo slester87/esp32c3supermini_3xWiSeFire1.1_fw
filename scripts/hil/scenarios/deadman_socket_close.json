@@ -1,0 +1,11 @@
+{
+  "name": "deadman_socket_close",
+  "description": "Send DOWN, stream HOLD frames, then close the websocket while held.",
+  "steps": [
+    { "action": "connect" },
+    { "action": "send", "message": "PING" },
+    { "action": "send", "message": "DOWN" },
+    { "action": "hold_for", "duration_ms": 1000 },
+    { "action": "disconnect" }
+  ]
+}

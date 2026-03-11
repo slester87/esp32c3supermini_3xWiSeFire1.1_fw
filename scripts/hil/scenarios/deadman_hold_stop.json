@@ -1,0 +1,12 @@
+{
+  "name": "deadman_hold_stop",
+  "description": "Send DOWN, stream HOLD frames, then stop HOLD without UP to validate dead-man cutoff.",
+  "steps": [
+    { "action": "connect" },
+    { "action": "send", "message": "PING" },
+    { "action": "send", "message": "DOWN" },
+    { "action": "hold_for", "duration_ms": 1000 },
+    { "action": "sleep", "duration_ms": 400 },
+    { "action": "disconnect" }
+  ]
+}

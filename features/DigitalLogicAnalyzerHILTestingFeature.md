@@ -30,25 +30,20 @@ Required invariants:
 
 ## Hardware Setup
 Required equipment:
-- Digital logic analyzer (>= 2 channels, >= 1 MHz sample rate minimum; 10 MHz preferred).
+- Digital logic analyzer (1 channel minimum, >= 10 MHz sample rate minimum; 10 MHz preferred).
 - Test fixture access points for:
-  - Solenoid control digital signal (the second virtual LED data result / downstream control gate signal).
-  - Optional sync pin from firmware for event markers.
+  - `GPIO4`, which already carries the WS2812 waveform used by the firmware.
 - ESP32-C3 target running test firmware.
 - Host machine running browser client + test harness.
 
 Recommended channel mapping:
-- CH0: Solenoid control line (or closest digital gate equivalent).
-- CH1: Optional firmware debug GPIO pulse marker.
-- CH2 (optional): Wi-Fi disconnect trigger marker if externally controlled.
+- CH0: `GPIO4`
 
 ## Instrumentation Strategy
-To tighten timing attribution, add temporary debug markers in firmware:
-- `DBG_PIN_LAST_HOLD_RX`: pulse when `HOLD` message is processed.
-- `DBG_PIN_DEADMAN_EXPIRE`: pulse when hold-liveness timeout callback fires.
-- `DBG_PIN_SOLENOID_OFF`: pulse immediately before solenoid line de-assertion call.
-
-If only one debug pin is available, encode with pulse counts or widths.
+The only supported observable is the existing WS2812 waveform on `GPIO4`. Timing attribution must come from correlating:
+- host-side scenario timing
+- analyzer captures of `GPIO4`
+- firmware knowledge of when `led_strip_refresh()` is invoked
 
 ## Test Architecture
 ### Components
@@ -112,9 +107,8 @@ If only one debug pin is available, encode with pulse counts or widths.
 
 ## Metrics and Pass/Fail
 Measured latencies:
-- `T_hold_last_to_off`: last observed HOLD-associated marker to solenoid OFF edge.
-- `T_disconnect_to_off`: disconnect event proxy to OFF edge.
-- `T_deadman_cb_to_off`: timeout callback marker to OFF edge.
+- `T_hold_last_to_waveform_change`: last observed HOLD transmission to the first relevant `GPIO4` waveform change.
+- `T_disconnect_to_waveform_change`: disconnect event proxy to the first relevant `GPIO4` waveform change.
 
 Pass criteria:
 - P0 safety gate:
@@ -168,18 +162,18 @@ Recommendation:
 - Use websocket harness for deterministic dead-man timing, then one Playwright smoke test for UI-path realism.
 
 ## Implementation Tasks
-1. Add debug GPIO instrumentation flags in firmware (build-time toggle).
+1. Keep `GPIO4` as the only HIL-observed signal.
 2. Create `scripts/hil/` with:
 - scenario runner
 - capture wrapper
-- report generator
+ - waveform-aware report generator
 3. Define scenario YAML/JSON files for matrix coverage.
 4. Add runbook for lab setup and calibration.
 5. Add pre-release checklist entry requiring HIL pass report.
 
 ## Risks and Mitigations
-Risk: Measurement skew due to missing synchronized event markers.
-- Mitigation: use dedicated debug GPIO pulses.
+Risk: Measurement skew due to using only the raw `GPIO4` waveform.
+- Mitigation: correlate analyzer captures with deterministic host-side scenario timing and documented firmware refresh points.
 
 Risk: False confidence from too-low sample rate.
 - Mitigation: standardize analyzer rate at >= 10 MHz where possible.
@@ -193,7 +187,7 @@ Risk: Flaky network test reproducibility.
 ## Open Decisions
 1. Analyzer platform selection (Saleae vs sigrok).
 2. Exact stressed pass threshold (150 ms recommended).
-3. Whether to keep debug markers in production firmware behind compile flag.
+3. Exact waveform-decoding strategy for extracting higher-level events from `GPIO4`.
 
 ## Done Definition
 This feature is complete when:

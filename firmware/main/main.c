@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sdkconfig.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
