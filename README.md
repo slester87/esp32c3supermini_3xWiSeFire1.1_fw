@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/slester87/esp32c3supermini_3xWiSeFire1.1_fw/actions/workflows/ci.yml/badge.svg?branch=main)
 
-Firmware and UI for a two-poofer, 3-channel WiSeFire 1.1-driven controller built on an ESP32-C3 Super Mini.
+Firmware and UI for a 3-channel WiSeFire 1.1-driven poofer controller built on an ESP32-C3 Super Mini.
 
 ## Quick Start
 
@@ -30,11 +30,11 @@ Condensed steps:
 GPIO4 drives a 3-pixel WS2812 chain.
 
 - Pixel 0 is a physical on-board LED soldered to the ESP32 board.
-- Pixel 1 is a virtual pixel used for Poofer 1 solenoid control via the custom PCB.
-- Pixel 2 is a virtual pixel used for Poofer 2 solenoid control via the custom PCB.
+- Pixel 1 is a virtual pixel used for solenoid control via the custom PCB.
+- Pixel 2 is a virtual pixel used as a firing indicator.
 This mapping is intentional and should be preserved. The firmware treats the chain as three pixels.
-The firmware drives the selected output pixel as white (`R=G=B`). On the WiSeFire board, Pixel 1 white
-fires solenoids 1 and 2 for Poofer 1, and Pixel 2 white fires solenoid 3 for Poofer 2.
+Currently, the firmware drives Pixel 1 and Pixel 2 as white (`R=G=B`). On the WiSeFire board, Pixel 1 white
+fires solenoids 1 and 2, and Pixel 2 white fires solenoid 3.
 
 ## Architecture
 
@@ -65,11 +65,8 @@ Firing state:
 
 Messages from client to device:
 
-- `DOWN 1` starts a Poofer 1 press
-- `UP 1` ends a Poofer 1 press
-- `DOWN 2` starts a Poofer 2 press
-- `UP 2` ends a Poofer 2 press
-- `DOWN` and `UP` are accepted as legacy aliases for Poofer 1
+- `DOWN` starts a press
+- `UP` ends a press
 - `PING` requests a state update
 
 State messages from device to client:
@@ -81,12 +78,7 @@ State messages from device to client:
   "error": false,
   "connected": true,
   "elapsed_ms": 0,
-  "last_hold_ms": 250,
-  "active_poofer": 0,
-  "poofers": [
-    {"id": 1, "firing": false, "last_hold_ms": 250},
-    {"id": 2, "firing": false, "last_hold_ms": 250}
-  ]
+  "last_hold_ms": 250
 }
 ```
 

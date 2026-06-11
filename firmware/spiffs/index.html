@@ -45,26 +45,21 @@
       width: 100%; border-radius: 6px; height: 100%; background: linear-gradient(180deg, #59d185, var(--gauge-fill));
       transition: height 0.08s linear;
     }
-    .control { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .poofer { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .control {
+      flex: 1; display: flex; flex-direction: column; gap: 12px;
+    }
     .btn {
       user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation; cursor: pointer;
       background: var(--btn-up); border: 1px solid #2c3b52; border-radius: 14px; padding: 26px 18px;
-      text-align: center; font-size: 20px; font-weight: 700; letter-spacing: 1px;
+      text-align: center; font-size: 22px; font-weight: 700; letter-spacing: 1px;
       box-shadow: inset 0 0 18px rgba(0,0,0,0.4);
     }
     .btn.active { background: var(--btn-down); color: #fff; box-shadow: inset 0 0 24px rgba(0,0,0,0.6); }
-    .btn.locked { opacity: 0.45; cursor: default; }
     .meta { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
     .meta span { font-variant-numeric: tabular-nums; }
     .footer { margin-top: 12px; font-size: 12px; color: var(--muted); }
     a { color: #7fb7ff; text-decoration: none; }
-    @media (max-width: 460px) {
-      .row { gap: 12px; }
-      .control { grid-template-columns: 1fr; }
-      .btn { padding: 22px 14px; }
-    }
   </style>
 </head>
 <body>
@@ -82,19 +77,10 @@
         <div class="gauge-fill" id="gaugeFill"></div>
       </div>
       <div class="control">
-        <div class="poofer">
-          <div class="btn" data-poofer="1">FIRE 1</div>
-          <div class="meta">
-            <span>Held: <span id="heldMs1">0</span> ms</span>
-            <span>Last: <span id="lastMs1">250</span> ms</span>
-          </div>
-        </div>
-        <div class="poofer">
-          <div class="btn" data-poofer="2">FIRE 2</div>
-          <div class="meta">
-            <span>Held: <span id="heldMs2">0</span> ms</span>
-            <span>Last: <span id="lastMs2">250</span> ms</span>
-          </div>
+        <div class="btn" id="fireBtn">FIRE</div>
+        <div class="meta">
+          <span>Held: <span id="heldMs">0</span> ms</span>
+          <span>Last: <span id="lastMs">250</span> ms</span>
         </div>
       </div>
     </div>
@@ -106,23 +92,17 @@
 
 <script>
 (() => {
-  const fireBtns = Array.from(document.querySelectorAll('[data-poofer]'));
+  const fireBtn = document.getElementById('fireBtn');
   const gaugeFill = document.getElementById('gaugeFill');
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
-  const heldMsEls = {
-    1: document.getElementById('heldMs1'),
-    2: document.getElementById('heldMs2')
-  };
-  const lastMsEls = {
-    1: document.getElementById('lastMs1'),
-    2: document.getElementById('lastMs2')
-  };
+  const heldMsEl = document.getElementById('heldMs');
+  const lastMsEl = document.getElementById('lastMs');
 
   let ws;
-  let activePoofer = 0;
+  let isDown = false;
   let pressStart = 0;
-  let lastHoldMs = { 1: 250, 2: 250 };
+  let lastHoldMs = 250;
   let rafId = null;
   let gauge = 1.0;
   let lastDeviceElapsed = 0;
@@ -137,14 +117,6 @@
   function setStatus(text, color) {
     statusText.textContent = text;
     statusDot.style.background = color;
-  }
-
-  function setButtonState() {
-    fireBtns.forEach((btn) => {
-      const id = Number(btn.dataset.poofer);
-      btn.classList.toggle('active', activePoofer === id);
-      btn.classList.toggle('locked', activePoofer !== 0 && activePoofer !== id);
-    });
   }
 
   function connect() {
@@ -164,23 +136,10 @@
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        if (Array.isArray(data.poofers)) {
-          data.poofers.forEach((poofer) => {
-            if (poofer.id === 1 || poofer.id === 2) {
-              lastHoldMs[poofer.id] = poofer.last_hold_ms || lastHoldMs[poofer.id];
-              lastMsEls[poofer.id].textContent = Math.round(lastHoldMs[poofer.id]);
-            }
-          });
-        } else {
-          lastHoldMs[1] = data.last_hold_ms || lastHoldMs[1];
-          lastMsEls[1].textContent = Math.round(lastHoldMs[1]);
-        }
-
-        activePoofer = data.active_poofer || 0;
+        lastHoldMs = data.last_hold_ms || lastHoldMs;
+        lastMsEl.textContent = lastHoldMs;
         lastDeviceElapsed = data.elapsed_ms || 0;
-        heldMsEls[1].textContent = activePoofer === 1 ? lastDeviceElapsed : 0;
-        heldMsEls[2].textContent = activePoofer === 2 ? lastDeviceElapsed : 0;
-        setButtonState();
+        heldMsEl.textContent = lastDeviceElapsed;
 
         if (data.error) {
           setStatus('Error', '#e63946');
@@ -205,17 +164,17 @@
     const startGauge = gauge;
 
     const tick = (now) => {
-      if (activePoofer === 0) return;
+      if (!isDown) return;
       const elapsed = now - start;
       if (elapsed >= MAX_MS) {
         setGauge(0);
-        heldMsEls[activePoofer].textContent = Math.round(MAX_MS);
+        heldMsEl.textContent = Math.round(MAX_MS);
         startRefill(MAX_MS);
         return;
       }
       const next = startGauge - (elapsed / MAX_MS);
       setGauge(next);
-      heldMsEls[activePoofer].textContent = Math.round(elapsed);
+      heldMsEl.textContent = Math.round(elapsed);
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -243,47 +202,36 @@
     }
   }
 
-  function handleDown(id) {
-    if (activePoofer !== 0) return;
-    activePoofer = id;
+  function handleDown() {
+    if (isDown) return;
+    isDown = true;
     pressStart = performance.now();
-    setButtonState();
-    send(`DOWN ${id}`);
+    fireBtn.classList.add('active');
+    send('DOWN');
     startDrain();
   }
 
   function handleUp() {
-    if (activePoofer === 0) return;
-    const id = activePoofer;
-    activePoofer = 0;
-    setButtonState();
-    send(`UP ${id}`);
+    if (!isDown) return;
+    isDown = false;
+    fireBtn.classList.remove('active');
+    send('UP');
 
     const held = performance.now() - pressStart;
     const clamped = Math.min(MAX_MS, Math.max(250, held));
-    lastHoldMs[id] = clamped;
-    lastMsEls[id].textContent = Math.round(clamped);
-    heldMsEls[id].textContent = 0;
+    lastHoldMs = clamped;
+    lastMsEl.textContent = Math.round(clamped);
     startRefill(clamped);
   }
 
-  fireBtns.forEach((btn) => {
-    btn.addEventListener('contextmenu', (e) => e.preventDefault());
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      handleDown(Number(btn.dataset.poofer));
-    });
-    btn.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      handleDown(Number(btn.dataset.poofer));
-    }, { passive: false });
-  });
-  document.addEventListener('pointerup', () => { if (activePoofer !== 0) handleUp(); });
+  fireBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+  fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); handleDown(); });
+  document.addEventListener('pointerup', (e) => { if (isDown) handleUp(); });
   document.addEventListener('pointercancel', handleUp);
-  document.addEventListener('touchend', (e) => { if (activePoofer !== 0) { e.preventDefault(); handleUp(); } }, { passive: false });
+  fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(); }, { passive: false });
+  fireBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleUp(); }, { passive: false });
 
   setGauge(1.0);
-  setButtonState();
   connect();
   setInterval(() => send('PING'), 1000);
 })();

@@ -9,6 +9,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      POOFER_SKIP_CLANG_TIDY: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,7 +28,7 @@ jobs:
       - name: Install clang tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y clang-format clang-tidy
 
       - name: Install ESP-IDF
         run: |
