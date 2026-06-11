@@ -14,7 +14,6 @@ This guide walks through a full local setup for building, flashing, and monitori
 Optional but recommended development tools:
 
 - `clang-format`
-- `clang-tidy`
 - `pre-commit`
 
 ## Install ESP-IDF
@@ -86,8 +85,8 @@ scripts/lint.sh
 
 Notes:
 
-- `clang-tidy` requires `firmware/build/compile_commands.json`.
-- You can generate it with an IDF build. If it is missing, the lint script will skip `clang-tidy`.
+- `scripts/lint.sh` checks Python lint/format and C formatting.
+- Run `python3 scripts/build.py` for the firmware compile and linker checks.
 
 ## Wi-Fi And UI
 

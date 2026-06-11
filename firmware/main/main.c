@@ -36,10 +36,11 @@
 #define MIN_HOLD_MS 250
 #define SOLENOID_KICK_MS 50
 #define SOLENOID_HOLD_LEVEL 255
+#define POOFER_COUNT 2
 
 #define STATUS_LED_INDEX 0
-#define SOLENOID_PIXEL_INDEX 1
-#define FIRING_PIXEL_INDEX 2
+#define POOFER_1_PIXEL_INDEX 1
+#define POOFER_2_PIXEL_INDEX 2
 
 #define GPIO_NEOPIXEL GPIO_NUM_4
 
@@ -59,10 +60,11 @@ typedef struct {
     bool press_ignore_until_release;
     bool release_pending;
     int64_t press_start_us;
-    uint32_t last_hold_ms;
+    int active_poofer;
+    uint32_t last_hold_ms[POOFER_COUNT];
     int64_t last_ws_rx_us;
     bool ws_connected;
-    uint8_t solenoid_level;
+    uint8_t poofer_level[POOFER_COUNT];
     uint8_t status_r;
     uint8_t status_g;
     uint8_t status_b;
@@ -77,10 +79,11 @@ static runtime_state_t runtime = {
     .press_ignore_until_release = false,
     .release_pending = false,
     .press_start_us = 0,
-    .last_hold_ms = MIN_HOLD_MS,
+    .active_poofer = -1,
+    .last_hold_ms = {MIN_HOLD_MS, MIN_HOLD_MS},
     .last_ws_rx_us = 0,
     .ws_connected = false,
-    .solenoid_level = 0,
+    .poofer_level = {0, 0},
     .status_r = 0,
     .status_g = 0,
     .status_b = 0,
@@ -96,15 +99,27 @@ static void refresh_pixels_locked(void) {
     }
     led_strip_set_pixel(strip, STATUS_LED_INDEX, runtime.status_r, runtime.status_g,
                         runtime.status_b);
-    led_strip_set_pixel(strip, SOLENOID_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
-                        runtime.solenoid_level);
-    led_strip_set_pixel(strip, FIRING_PIXEL_INDEX, runtime.solenoid_level, runtime.solenoid_level,
-                        runtime.solenoid_level);
+    led_strip_set_pixel(strip, POOFER_1_PIXEL_INDEX, runtime.poofer_level[0],
+                        runtime.poofer_level[0], runtime.poofer_level[0]);
+    led_strip_set_pixel(strip, POOFER_2_PIXEL_INDEX, runtime.poofer_level[1],
+                        runtime.poofer_level[1], runtime.poofer_level[1]);
     led_strip_refresh(strip);
 }
 
-static void set_solenoid_level_locked(uint8_t level) {
-    runtime.solenoid_level = level;
+static bool is_valid_poofer(int poofer) { return poofer >= 0 && poofer < POOFER_COUNT; }
+
+static void set_poofer_level_locked(int poofer, uint8_t level) {
+    if (!is_valid_poofer(poofer)) {
+        return;
+    }
+    runtime.poofer_level[poofer] = level;
+    refresh_pixels_locked();
+}
+
+static void clear_poofer_levels_locked(void) {
+    for (int i = 0; i < POOFER_COUNT; i++) {
+        runtime.poofer_level[i] = 0;
+    }
     refresh_pixels_locked();
 }
 
@@ -167,29 +182,41 @@ static void send_state_async(void) {
         return;
     }
 
-    char payload[192];
+    char payload[384];
     bool ready = false;
     bool firing = false;
+    bool firing_poofer[POOFER_COUNT] = {false, false};
     bool error = false;
     bool connected = false;
     uint32_t elapsed = 0;
-    uint32_t last_hold = 0;
+    uint32_t last_hold[POOFER_COUNT] = {0, 0};
+    int active_poofer = 0;
 
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
         ready = (runtime.state == STATE_READY || runtime.state == STATE_FIRING);
         firing = (runtime.state == STATE_FIRING);
+        if (firing && is_valid_poofer(runtime.active_poofer)) {
+            firing_poofer[runtime.active_poofer] = true;
+        }
         error = (runtime.state == STATE_ERROR);
         connected = runtime.ws_connected;
         elapsed = current_elapsed_ms_locked();
-        last_hold = runtime.last_hold_ms;
+        last_hold[0] = runtime.last_hold_ms[0];
+        last_hold[1] = runtime.last_hold_ms[1];
+        active_poofer = runtime.active_poofer + 1;
         xSemaphoreGive(state_lock);
     }
 
     int len = snprintf(payload, sizeof(payload),
                        "{\"ready\":%s,\"firing\":%s,\"error\":%s,\"connected\":%s,"
-                       "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 "}",
+                       "\"elapsed_ms\":%" PRIu32 ",\"last_hold_ms\":%" PRIu32 ","
+                       "\"active_poofer\":%d,\"poofers\":["
+                       "{\"id\":1,\"firing\":%s,\"last_hold_ms\":%" PRIu32 "},"
+                       "{\"id\":2,\"firing\":%s,\"last_hold_ms\":%" PRIu32 "}]}",
                        ready ? "true" : "false", firing ? "true" : "false",
-                       error ? "true" : "false", connected ? "true" : "false", elapsed, last_hold);
+                       error ? "true" : "false", connected ? "true" : "false", elapsed,
+                       last_hold[0], active_poofer, firing_poofer[0] ? "true" : "false",
+                       last_hold[0], firing_poofer[1] ? "true" : "false", last_hold[1]);
     if (len <= 0 || len >= (int)sizeof(payload)) {
         return;
     }
@@ -207,18 +234,21 @@ static void send_state_async(void) {
 static void stop_firing_locked(system_state_t next_state) {
     runtime.press_active = false;
     runtime.release_pending = false;
+    runtime.active_poofer = -1;
     runtime.state = next_state;
-    set_solenoid_level_locked(0);
+    clear_poofer_levels_locked();
     update_status_led_locked();
 }
 
-static void start_firing_locked(void) {
+static void start_firing_locked(int poofer) {
     runtime.state = STATE_FIRING;
     runtime.press_active = true;
     runtime.release_pending = false;
+    runtime.active_poofer = poofer;
     runtime.press_start_us = esp_timer_get_time();
     update_status_led_locked();
-    set_solenoid_level_locked(255);
+    clear_poofer_levels_locked();
+    set_poofer_level_locked(poofer, 255);
 }
 
 static void max_hold_timer_cb(void* arg) {
@@ -228,11 +258,14 @@ static void max_hold_timer_cb(void* arg) {
     }
 
     if (runtime.press_active) {
-        runtime.last_hold_ms = MAX_HOLD_MS;
+        if (is_valid_poofer(runtime.active_poofer)) {
+            runtime.last_hold_ms[runtime.active_poofer] = MAX_HOLD_MS;
+        }
         runtime.press_active = false;
         runtime.press_ignore_until_release = true;
         runtime.state = STATE_READY;
-        set_solenoid_level_locked(0);
+        runtime.active_poofer = -1;
+        clear_poofer_levels_locked();
         update_status_led_locked();
     }
 
@@ -260,14 +293,18 @@ static void solenoid_kick_timer_cb(void* arg) {
         return;
     }
 
-    if (runtime.state == STATE_FIRING) {
-        set_solenoid_level_locked(SOLENOID_HOLD_LEVEL);
+    if (runtime.state == STATE_FIRING && is_valid_poofer(runtime.active_poofer)) {
+        set_poofer_level_locked(runtime.active_poofer, SOLENOID_HOLD_LEVEL);
     }
 
     xSemaphoreGive(state_lock);
 }
 
-static void handle_press_down(void) {
+static void handle_press_down(int poofer) {
+    if (!is_valid_poofer(poofer)) {
+        return;
+    }
+
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
     }
@@ -278,7 +315,7 @@ static void handle_press_down(void) {
         return;
     }
 
-    start_firing_locked();
+    start_firing_locked(poofer);
 
     esp_timer_stop(max_hold_timer);
     esp_timer_start_once(max_hold_timer, (uint64_t)MAX_HOLD_MS * 1000ULL);
@@ -290,7 +327,11 @@ static void handle_press_down(void) {
     send_state_async();
 }
 
-static void handle_press_up(void) {
+static void handle_press_up(int poofer) {
+    if (!is_valid_poofer(poofer)) {
+        return;
+    }
+
     if (xSemaphoreTake(state_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
         return;
     }
@@ -304,13 +345,21 @@ static void handle_press_up(void) {
         return;
     }
 
+    if (poofer != runtime.active_poofer) {
+        xSemaphoreGive(state_lock);
+        return;
+    }
+
+    int active_poofer = runtime.active_poofer;
     int64_t now = esp_timer_get_time();
     uint32_t held_ms = 0;
     if (now > runtime.press_start_us) {
         held_ms = (uint32_t)((now - runtime.press_start_us) / 1000);
     }
 
-    runtime.last_hold_ms = clamp_hold_ms(held_ms);
+    if (is_valid_poofer(active_poofer)) {
+        runtime.last_hold_ms[active_poofer] = clamp_hold_ms(held_ms);
+    }
 
     if (held_ms < MIN_HOLD_MS) {
         runtime.release_pending = true;
@@ -330,6 +379,28 @@ static void handle_press_up(void) {
     send_state_async();
 }
 
+static bool parse_ws_command(const char* msg, const char* command, int* poofer) {
+    size_t len = strlen(command);
+    if (strncmp(msg, command, len) != 0) {
+        return false;
+    }
+    if (msg[len] == '\0') {
+        *poofer = 0;
+        return true;
+    }
+    if (msg[len] != ' ' && msg[len] != ':') {
+        return false;
+    }
+
+    char* end = NULL;
+    long parsed = strtol(&msg[len + 1], &end, 10);
+    if (end == &msg[len + 1] || *end != '\0') {
+        return false;
+    }
+    *poofer = (int)parsed - 1;
+    return true;
+}
+
 static void handle_ws_message(const char* msg) {
     if (!msg) {
         return;
@@ -346,10 +417,11 @@ static void handle_ws_message(const char* msg) {
         xSemaphoreGive(state_lock);
     }
 
-    if (strcmp(msg, "DOWN") == 0) {
-        handle_press_down();
-    } else if (strcmp(msg, "UP") == 0) {
-        handle_press_up();
+    int poofer = 0;
+    if (parse_ws_command(msg, "DOWN", &poofer)) {
+        handle_press_down(poofer);
+    } else if (parse_ws_command(msg, "UP", &poofer)) {
+        handle_press_up(poofer);
     } else if (strcmp(msg, "PING") == 0) {
         send_state_async();
     }
@@ -710,10 +782,14 @@ static void status_task(void* arg) {
             if (runtime.press_active) {
                 int64_t elapsed = now - runtime.press_start_us;
                 if (elapsed >= (int64_t)MAX_HOLD_MS * 1000LL) {
-                    runtime.last_hold_ms = MAX_HOLD_MS;
+                    if (is_valid_poofer(runtime.active_poofer)) {
+                        runtime.last_hold_ms[runtime.active_poofer] = MAX_HOLD_MS;
+                    }
                     runtime.press_active = false;
                     runtime.press_ignore_until_release = true;
                     runtime.state = STATE_READY;
+                    runtime.active_poofer = -1;
+                    clear_poofer_levels_locked();
                     update_status_led_locked();
                     should_send = true;
                 }
@@ -761,7 +837,7 @@ static void init_led_strip(void) {
     };
     led_strip_new_rmt_device(&strip_config, &rmt_config, &strip);
     update_status_led_locked();
-    set_solenoid_level_locked(0);
+    clear_poofer_levels_locked();
 }
 
 void app_main(void) {
